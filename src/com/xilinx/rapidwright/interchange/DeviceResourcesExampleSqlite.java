@@ -24,6 +24,8 @@
 package com.xilinx.rapidwright.interchange;
 
 import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Paths;
 
 import com.xilinx.rapidwright.device.Device;
 import com.xilinx.rapidwright.tests.CodePerfTracker;
@@ -52,7 +54,7 @@ public class DeviceResourcesExampleSqlite {
         t.start("Load Device");
         Device device = Device.getDevice(args[0]);
         t.stop();
-        // Write Netlist to Cap'n Proto Serialization file
+        // Write Netlist to SQLite, see https://github.com/xerial/sqlite-jdbc
         DeviceResourcesWriterSqlite.writeDeviceResourcesFile(args[0], device, t, sqliteFileName, skipRouteResources);
         Device.releaseDeviceReferences();
 

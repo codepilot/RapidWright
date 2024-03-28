@@ -24,6 +24,8 @@
 package com.xilinx.rapidwright.interchange;
 
 import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
@@ -44,6 +46,7 @@ import java.sql.DriverManager;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
+import java.sql.PreparedStatement;
 
 import com.xilinx.rapidwright.design.Design;
 import com.xilinx.rapidwright.design.DesignTools;
@@ -80,11 +83,51 @@ import com.xilinx.rapidwright.tests.CodePerfTracker;
 import com.xilinx.rapidwright.util.Pair;
 
 public class DeviceResourcesWriterSqlite {
+    private static Connection connection;
+    private static PreparedStatement ps_strList_insert;
+    private static PreparedStatement ps_name_insert;
+    private static PreparedStatement ps_siteTypeList_insert;
     private static StringEnumerator allStrings;
     private static IdentityEnumerator<SiteTypeEnum> allSiteTypes;
 
     private static HashMap<TileTypeEnum,Tile> tileTypes;
     private static HashMap<SiteTypeEnum,Site> siteTypes;
+
+    public static void insert_string(String str) {
+        if(allStrings.contains(str)) return;
+        try {
+            allStrings.addObject(str);
+            ps_strList_insert.setString(1, str);
+            ResultSet rs1 = ps_strList_insert.executeQuery();
+            rs1.close();
+        }
+        catch(SQLException e) {
+          e.printStackTrace(System.err);
+        }
+      }
+
+    public static void insert_device_name(Device device) {
+        try {
+            ps_name_insert.setString(1, device.getName());
+            ResultSet rs1 = ps_name_insert.executeQuery();
+            rs1.close();
+        }
+        catch(SQLException e) {
+          e.printStackTrace(System.err);
+        }
+    }
+
+    public static void insert_siteType(String name) {
+        insert_string(name);
+        try {
+            ps_siteTypeList_insert.setLong(1, allStrings.getIndex(name));
+            ResultSet rs1 = ps_siteTypeList_insert.executeQuery();
+            rs1.close();
+        }
+        catch(SQLException e) {
+          e.printStackTrace(System.err);
+        }
+    }
 
     public static void populateSiteEnumerations(SiteInst siteInst, Site site) {
         if (!siteTypes.containsKey(siteInst.getSiteTypeEnum())) {
@@ -92,20 +135,20 @@ public class DeviceResourcesWriterSqlite {
                 return;
             }
             siteTypes.put(siteInst.getSiteTypeEnum(), site);
-            allStrings.addObject(siteInst.getSiteTypeEnum().toString());
+            insert_string(siteInst.getSiteTypeEnum().toString());
 
             for (String siteWire : siteInst.getSiteWires()) {
-                allStrings.addObject(siteWire);
+                insert_string(siteWire);
             }
             for (BEL bel : siteInst.getBELs()) {
-                allStrings.addObject(bel.getName());
-                allStrings.addObject(bel.getBELType());
+                insert_string(bel.getName());
+                insert_string(bel.getBELType());
                 for (BELPin belPin : bel.getPins()) {
-                    allStrings.addObject(belPin.getName());
+                    insert_string(belPin.getName());
                 }
             }
             for (String sitePin : siteInst.getSitePinNames()) {
-                allStrings.addObject(sitePin);
+                insert_string(sitePin);
             }
         }
     }
@@ -113,6 +156,7 @@ public class DeviceResourcesWriterSqlite {
     public static void populateEnumerations(Design design, Device device) {
 
         allStrings = new StringEnumerator();
+        allStrings.addObject(""); //offset allStrings by 1 to match SQLite
         allSiteTypes = new IdentityEnumerator<>();
 
         HashMap<SiteTypeEnum,Site> allAltSiteTypeEnums = new HashMap<>();
@@ -120,17 +164,17 @@ public class DeviceResourcesWriterSqlite {
         tileTypes = new HashMap<>();
         siteTypes = new HashMap<>();
         for (Tile tile : device.getAllTiles()) {
-            allStrings.addObject(tile.getName());
+            insert_string(tile.getName());
             if (!tileTypes.containsKey(tile.getTileTypeEnum())) {
-                allStrings.addObject(tile.getTileTypeEnum().name());
+                insert_string(tile.getTileTypeEnum().name());
                 for (int i=0; i < tile.getWireCount(); i++) {
-                    allStrings.addObject(tile.getWireName(i));
+                    insert_string(tile.getWireName(i));
                 }
                 tileTypes.put(tile.getTileTypeEnum(),tile);
             }
             for (Site site : tile.getSites()) {
-                allStrings.addObject(site.getName());
-                allStrings.addObject(site.getSiteTypeEnum().name());
+                insert_string(site.getName());
+                insert_string(site.getSiteTypeEnum().name());
                 SiteInst siteInst = design.createSiteInst("site_instance", site.getSiteTypeEnum(), site);
                 populateSiteEnumerations(siteInst, site);
                 design.removeSiteInst(siteInst);
@@ -150,10 +194,10 @@ public class DeviceResourcesWriterSqlite {
         Map<String, Pair<String, EnumSet<IOStandard>>> macroExpandExceptionMap =
                 EDIFNetlist.macroExpandExceptionMap.getOrDefault(device.getSeries(), Collections.emptyMap());
         for (Entry<String,Pair<String, EnumSet<IOStandard>>> e : macroExpandExceptionMap.entrySet()) {
-            allStrings.addObject(e.getKey());
-            allStrings.addObject(e.getValue().getFirst());
+            insert_string(e.getKey());
+            insert_string(e.getValue().getFirst());
             for (IOStandard ioStd : e.getValue().getSecond()) {
-                allStrings.addObject(ioStd.name());
+                insert_string(ioStd.name());
             }
         }
 
@@ -257,47 +301,51 @@ public class DeviceResourcesWriterSqlite {
         Series series = device.getSeries();
 
         t.start("populateEnums");
-        populateEnumerations(design, device);
 
         String sqlitePath = ("jdbc:sqlite:" + fileName);
-        System.out.println("sqlitePath = " + sqlitePath);
-
-        try
-        (
-          // create a database connection
-        Connection connection = DriverManager.getConnection(sqlitePath);
-        Statement statement = connection.createStatement();
-        )
-        {
+        try {
+            connection = DriverManager.getConnection(sqlitePath);
+            Statement statement = connection.createStatement();
             statement.setQueryTimeout(30);  // set timeout to 30 sec.
 
-            statement.executeUpdate("drop table if exists person");
-            statement.executeUpdate("create table person (id integer, name text) strict");
-            statement.executeUpdate("insert into person values(1, 'leo')");
-            statement.executeUpdate("insert into person values(2, 'yui')");
-            ResultSet rs = statement.executeQuery("select * from person");
-            while(rs.next())
-            {
-              // read the result set
-              System.out.println("name = " + rs.getString("name"));
-              System.out.println("id = " + rs.getInt("id"));
-            }
-        }
-        catch(SQLException e)
-        {
-          // if the error message is "out of memory",
-          // it probably means no database file is found
+            statement.execute("PRAGMA main.auto_vacuum = 1;");
+            statement.execute("PRAGMA main.cache_size = -4096;");
+            statement.execute("PRAGMA main.encoding = 'UTF-8';");
+            statement.execute("PRAGMA main.foreign_keys = 1;");
+            statement.execute("PRAGMA main.mmap_size = 0x7FFFFFFFFFFFFFFF;");
+            statement.execute("PRAGMA user_version = 1;");
+            statement.execute("PRAGMA main.journal_mode = WAL;");
+
+            statement.execute(Files.readString(Paths.get("interchange/fpga-sqlite-schema/DeviceResources/strList/create.sql")));
+            statement.execute(Files.readString(Paths.get("interchange/fpga-sqlite-schema/DeviceResources/name/create.sql")));
+            statement.execute(Files.readString(Paths.get("interchange/fpga-sqlite-schema/DeviceResources/siteTypeList/create.sql")));
+
+            ps_strList_insert = connection.prepareStatement(Files.readString(Paths.get("interchange/fpga-sqlite-schema/DeviceResources/strList/insert.sql")));
+            ps_name_insert = connection.prepareStatement(Files.readString(Paths.get("interchange/fpga-sqlite-schema/DeviceResources/name/insert.sql")));
+            ps_siteTypeList_insert = connection.prepareStatement(Files.readString(Paths.get("interchange/fpga-sqlite-schema/DeviceResources/siteTypeList/insert.sql")));
+
+            connection.setAutoCommit(false);
+            statement.execute("PRAGMA main.defer_foreign_keys = 1;");
+
+            populateEnumerations(design, device);
+
+            insert_device_name(device);
+            t.stop().start("SiteTypes");
+            writeAllSiteTypesToBuilder(design, device);
+    
+            t.stop().start("TileTypes");
+
+            connection.commit();
+            connection.setAutoCommit(true);
+            connection.close();
+
+        } catch(SQLException e) {
           e.printStackTrace(System.err);
         }
-/*
-        MessageBuilder message = new MessageBuilder();
-        DeviceResources.Device.Builder devBuilder = message.initRoot(DeviceResources.Device.factory);
-        devBuilder.setName(device.getName());
 
-        t.stop().start("SiteTypes");
-        writeAllSiteTypesToBuilder(design, device, devBuilder);
 
-        t.stop().start("TileTypes");
+        /*
+
         Map<TileTypeEnum, Integer> tileTypeIndicies = writeAllTileTypesToBuilder(design, device, devBuilder);
         Map<TileTypeEnum, TileType.Builder> tileTypesObj = new HashMap<TileTypeEnum, TileType.Builder>();
         for (Map.Entry<TileTypeEnum, Integer> tileType : tileTypeIndicies.entrySet()) {
@@ -539,17 +587,19 @@ public class DeviceResourcesWriterSqlite {
             return Direction.INOUT;
         return Direction._NOT_IN_SCHEMA;
     }
-
-    public static void writeAllSiteTypesToBuilder(Design design, Device device, DeviceResources.Device.Builder devBuilder) {
-        StructList.Builder<SiteType.Builder> siteTypesList = devBuilder.initSiteTypeList(siteTypes.size());
+*/
+    public static void writeAllSiteTypesToBuilder(Design design, Device device) {
+        // StructList.Builder<SiteType.Builder> siteTypesList = devBuilder.initSiteTypeList(siteTypes.size());
 
         int i=0;
         for (Entry<SiteTypeEnum,Site> e : siteTypes.entrySet()) {
-            SiteType.Builder siteType = siteTypesList.get(i);
+            // SiteType.Builder siteType = siteTypesList.get(i);
             Site site = e.getValue();
-            SiteInst siteInst = design.createSiteInst("site_instance", e.getKey(), site);
-            Tile tile = siteInst.getTile();
-            siteType.setName(allStrings.getIndex(e.getKey().name()));
+            // // SiteInst siteInst = design.createSiteInst("site_instance", e.getKey(), site);
+            // Tile tile = siteInst.getTile();
+            // siteType.setName(allStrings.getIndex(e.getKey().name()));
+            insert_siteType(e.getKey().name());
+            /*
             allSiteTypes.addObject(e.getKey());
 
             IdentityEnumerator<BELPin> allBELPins = new IdentityEnumerator<BELPin>();
@@ -648,11 +698,13 @@ public class DeviceResourcesWriterSqlite {
             }
 
             design.removeSiteInst(siteInst);
+             */
             i++;
         }
 
         i = 0;
         for (Entry<SiteTypeEnum,Site> e : siteTypes.entrySet()) {
+            /*
             Site site = e.getValue();
 
             SiteType.Builder siteType = siteTypesList.get(i);
@@ -667,11 +719,11 @@ public class DeviceResourcesWriterSqlite {
                 }
                 altSiteTypesBuilder.set(j, siteTypeIdx);
             }
-
+            */
             i++;
         }
     }
-
+/*
     private static void populateAltSitePins(
             Design design,
             Site site,
