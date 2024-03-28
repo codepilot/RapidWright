@@ -93,40 +93,33 @@ public class DeviceResourcesWriterSqlite {
     private static HashMap<TileTypeEnum,Tile> tileTypes;
     private static HashMap<SiteTypeEnum,Site> siteTypes;
 
-    public static void insert_string(String str) {
-        if(allStrings.contains(str)) return;
+    public static long rowid_insert_string(PreparedStatement ps, String str) {
         try {
-            allStrings.addObject(str);
-            ps_strList_insert.setString(1, str);
-            ResultSet rs1 = ps_strList_insert.executeQuery();
+            ps.setString(1, str);
+            ResultSet rs1 = ps.executeQuery();
+            long rowid = rs1.getLong(1);
             rs1.close();
+            return rowid;
         }
         catch(SQLException e) {
           e.printStackTrace(System.err);
-        }
-      }
-
-    public static void insert_device_name(Device device) {
-        try {
-            ps_name_insert.setString(1, device.getName());
-            ResultSet rs1 = ps_name_insert.executeQuery();
-            rs1.close();
-        }
-        catch(SQLException e) {
-          e.printStackTrace(System.err);
+          return 0;
         }
     }
 
-    public static void insert_siteType(String name) {
-        insert_string(name);
-        try {
-            ps_siteTypeList_insert.setLong(1, allStrings.getIndex(name));
-            ResultSet rs1 = ps_siteTypeList_insert.executeQuery();
-            rs1.close();
-        }
-        catch(SQLException e) {
-          e.printStackTrace(System.err);
-        }
+    public static long insert_string(String str) {
+        if(allStrings.contains(str)) return allStrings.getIndex(str);
+        long rowid = rowid_insert_string(ps_strList_insert, str);
+        allStrings.add((int)rowid, str);
+        return rowid;
+      }
+
+    public static long insert_device_name(String name) {
+        return rowid_insert_string(ps_name_insert, name);
+    }
+
+    public static long insert_siteType(String name) {
+        return rowid_insert_string(ps_siteTypeList_insert, name);
     }
 
     public static void populateSiteEnumerations(SiteInst siteInst, Site site) {
@@ -329,7 +322,7 @@ public class DeviceResourcesWriterSqlite {
 
             populateEnumerations(design, device);
 
-            insert_device_name(device);
+            insert_device_name(device.getName());
             t.stop().start("SiteTypes");
             writeAllSiteTypesToBuilder(design, device);
     
@@ -589,19 +582,15 @@ public class DeviceResourcesWriterSqlite {
     }
 */
     public static void writeAllSiteTypesToBuilder(Design design, Device device) {
-        // StructList.Builder<SiteType.Builder> siteTypesList = devBuilder.initSiteTypeList(siteTypes.size());
-
-        int i=0;
         for (Entry<SiteTypeEnum,Site> e : siteTypes.entrySet()) {
-            // SiteType.Builder siteType = siteTypesList.get(i);
             Site site = e.getValue();
-            // // SiteInst siteInst = design.createSiteInst("site_instance", e.getKey(), site);
-            // Tile tile = siteInst.getTile();
-            // siteType.setName(allStrings.getIndex(e.getKey().name()));
+            SiteInst siteInst = design.createSiteInst("site_instance", e.getKey(), site);
+            Tile tile = siteInst.getTile();
             insert_siteType(e.getKey().name());
-            /*
+
             allSiteTypes.addObject(e.getKey());
 
+            /*
             IdentityEnumerator<BELPin> allBELPins = new IdentityEnumerator<BELPin>();
 
             // BELs
@@ -696,13 +685,11 @@ public class DeviceResourcesWriterSqlite {
                 spBuilder.setInpin(allBELPins.getIndex(sitePIP.getInputPin()));
                 spBuilder.setOutpin(allBELPins.getIndex(sitePIP.getOutputPin()));
             }
+            */
 
             design.removeSiteInst(siteInst);
-             */
-            i++;
         }
 
-        i = 0;
         for (Entry<SiteTypeEnum,Site> e : siteTypes.entrySet()) {
             /*
             Site site = e.getValue();
@@ -720,7 +707,6 @@ public class DeviceResourcesWriterSqlite {
                 altSiteTypesBuilder.set(j, siteTypeIdx);
             }
             */
-            i++;
         }
     }
 /*
