@@ -84,12 +84,10 @@ import com.xilinx.rapidwright.util.Pair;
 
 public class DeviceResourcesWriterSqlite {
     private static Connection connection;
-    private static PreparedStatement ps_strList_insert;
     private static PreparedStatement ps_name_insert;
     private static PreparedStatement ps_siteTypeList_insert;
     private static PreparedStatement ps_bels_insert;
     private static PreparedStatement ps_belCategories_insert;
-    private static StringEnumerator allStrings;
     private static IdentityEnumerator<SiteTypeEnum> allSiteTypes;
 
     private static HashMap<TileTypeEnum,Tile> tileTypes;
@@ -108,13 +106,6 @@ public class DeviceResourcesWriterSqlite {
           return 0;
         }
     }
-
-    public static long insert_string(String str) {
-        if(allStrings.contains(str)) return allStrings.getIndex(str);
-        long rowid = rowid_insert_string(ps_strList_insert, str);
-        allStrings.add((int)rowid, str);
-        return rowid;
-      }
 
     public static long insert_device_name(String name) {
         return rowid_insert_string(ps_name_insert, name);
@@ -152,28 +143,11 @@ public class DeviceResourcesWriterSqlite {
                 return;
             }
             siteTypes.put(siteInst.getSiteTypeEnum(), site);
-            insert_string(siteInst.getSiteTypeEnum().toString());
-
-            for (String siteWire : siteInst.getSiteWires()) {
-                insert_string(siteWire);
-            }
-            for (BEL bel : siteInst.getBELs()) {
-                insert_string(bel.getName());
-                insert_string(bel.getBELType());
-                for (BELPin belPin : bel.getPins()) {
-                    insert_string(belPin.getName());
-                }
-            }
-            for (String sitePin : siteInst.getSitePinNames()) {
-                insert_string(sitePin);
-            }
         }
     }
 
     public static void populateEnumerations(Design design, Device device) {
 
-        allStrings = new StringEnumerator();
-        allStrings.addObject(""); //offset allStrings by 1 to match SQLite
         allSiteTypes = new IdentityEnumerator<>();
 
         HashMap<SiteTypeEnum,Site> allAltSiteTypeEnums = new HashMap<>();
@@ -181,17 +155,10 @@ public class DeviceResourcesWriterSqlite {
         tileTypes = new HashMap<>();
         siteTypes = new HashMap<>();
         for (Tile tile : device.getAllTiles()) {
-            insert_string(tile.getName());
             if (!tileTypes.containsKey(tile.getTileTypeEnum())) {
-                insert_string(tile.getTileTypeEnum().name());
-                for (int i=0; i < tile.getWireCount(); i++) {
-                    insert_string(tile.getWireName(i));
-                }
                 tileTypes.put(tile.getTileTypeEnum(),tile);
             }
             for (Site site : tile.getSites()) {
-                insert_string(site.getName());
-                insert_string(site.getSiteTypeEnum().name());
                 SiteInst siteInst = design.createSiteInst("site_instance", site.getSiteTypeEnum(), site);
                 populateSiteEnumerations(siteInst, site);
                 design.removeSiteInst(siteInst);
@@ -210,13 +177,6 @@ public class DeviceResourcesWriterSqlite {
         }
         Map<String, Pair<String, EnumSet<IOStandard>>> macroExpandExceptionMap =
                 EDIFNetlist.macroExpandExceptionMap.getOrDefault(device.getSeries(), Collections.emptyMap());
-        for (Entry<String,Pair<String, EnumSet<IOStandard>>> e : macroExpandExceptionMap.entrySet()) {
-            insert_string(e.getKey());
-            insert_string(e.getValue().getFirst());
-            for (IOStandard ioStd : e.getValue().getSecond()) {
-                insert_string(ioStd.name());
-            }
-        }
 
         for (Entry<SiteTypeEnum, Site> altSiteType : allAltSiteTypeEnums.entrySet()) {
             if (!siteTypes.containsKey(altSiteType.getKey())) {
@@ -284,6 +244,7 @@ public class DeviceResourcesWriterSqlite {
         }
     }
 
+
     private static boolean containsUnusedMacros(EDIFCell cell, Set<EDIFCell> unusedMacros) {
         Queue<EDIFCell> q = new LinkedList<>();
         Set<EDIFCell> visited = new HashSet<>();
@@ -308,7 +269,6 @@ public class DeviceResourcesWriterSqlite {
             String fileName) throws IOException {
         writeDeviceResourcesFile(part, device, t, fileName, false);
     }
-
 */
     
     public static void writeDeviceResourcesFile(String part, Device device, CodePerfTracker t, 
@@ -333,13 +293,11 @@ public class DeviceResourcesWriterSqlite {
             statement.execute("PRAGMA user_version = 1;");
             statement.execute("PRAGMA main.journal_mode = WAL;");
 
-            statement.execute(Files.readString(Paths.get("interchange/fpga-sqlite-schema/DeviceResources/strList/create.sql")));
             statement.execute(Files.readString(Paths.get("interchange/fpga-sqlite-schema/DeviceResources/name/create.sql")));
             statement.execute(Files.readString(Paths.get("interchange/fpga-sqlite-schema/DeviceResources/siteTypeList/create.sql")));
             statement.execute(Files.readString(Paths.get("interchange/fpga-sqlite-schema/DeviceResources/belCategories/create.sql")));
             statement.execute(Files.readString(Paths.get("interchange/fpga-sqlite-schema/DeviceResources/bels/create.sql")));
 
-            ps_strList_insert = connection.prepareStatement(Files.readString(Paths.get("interchange/fpga-sqlite-schema/DeviceResources/strList/insert.sql")));
             ps_name_insert = connection.prepareStatement(Files.readString(Paths.get("interchange/fpga-sqlite-schema/DeviceResources/name/insert.sql")));
             ps_siteTypeList_insert = connection.prepareStatement(Files.readString(Paths.get("interchange/fpga-sqlite-schema/DeviceResources/siteTypeList/insert.sql")));
             ps_bels_insert = connection.prepareStatement(Files.readString(Paths.get("interchange/fpga-sqlite-schema/DeviceResources/bels/insert.sql")));
@@ -367,23 +325,26 @@ public class DeviceResourcesWriterSqlite {
         } catch(SQLException e) {
           e.printStackTrace(System.err);
         }
-
-
         /*
-
+        
         Map<TileTypeEnum, Integer> tileTypeIndicies = writeAllTileTypesToBuilder(design, device, devBuilder);
         Map<TileTypeEnum, TileType.Builder> tileTypesObj = new HashMap<TileTypeEnum, TileType.Builder>();
         for (Map.Entry<TileTypeEnum, Integer> tileType : tileTypeIndicies.entrySet()) {
             tileTypesObj.put(tileType.getKey(), devBuilder.getTileTypeList().get(tileType.getValue()));
         }
-
+        */
         t.stop().start("Tiles");
+        /*
         writeAllTilesToBuilder(device, devBuilder, tileTypeIndicies);
 
+        */
         t.stop().start("Wires&Nodes");
+        /*
         writeAllWiresAndNodesToBuilder(device, devBuilder, skipRouteResources);
+        */
 
         t.stop().start("Prims&Macros");
+        /*
         // Create an EDIFNetlist populated with just primitive and macro libraries
         EDIFLibrary prims = Design.getPrimitivesLibrary(device.getName());
         EDIFLibrary macros = Design.getMacroPrimitives(series);
@@ -558,28 +519,37 @@ public class DeviceResourcesWriterSqlite {
             }
             i++;
         }
-
+        */
         t.stop().start("Cell <-> BEL pin map");
+        /*
         EnumerateCellBelMapping.populateAllPinMappings(part, device, devBuilder, allStrings);
 
+        */
         t.stop().start("Packages");
+        /*
         populatePackages(allStrings, device, devBuilder);
 
+        */
         t.stop().start("Constants");
+        /*
         ConstantDefinitions.writeConstants(allStrings, device, devBuilder.initConstants(), design, siteTypes, tileTypesObj);
 
+        */
         t.stop().start("Wire Types");
+        /*
         writeWireTypes(allStrings, devBuilder);
 
+        */
         t.stop().start("Strings");
+        /*
         writeAllStringsToBuilder(devBuilder);
 
+        */
         t.stop().start("Write File");
+        /*
         Interchange.writeInterchangeFile(fileName, message);
+        */
         t.stop();
-
-*/
-
     }
 
 /*
@@ -608,13 +578,11 @@ public class DeviceResourcesWriterSqlite {
             SiteInst siteInst = design.createSiteInst("site_instance", e.getKey(), site);
             Tile tile = siteInst.getTile();
             long rowid_siteType = insert_siteType(e.getKey().name());
-
             allSiteTypes.addObject(e.getKey());
 
             IdentityEnumerator<BELPin> allBELPins = new IdentityEnumerator<BELPin>();
             
             // BELs
-
             for (int j=0; j < siteInst.getBELs().length; j++) {
                 insert_bel(rowid_siteType, siteInst.getBELs()[j]);
                 // PrimitiveList.Int.Builder belPinsBuilder = belBuilder.initPins(bel.getPins().length);
@@ -701,13 +669,13 @@ public class DeviceResourcesWriterSqlite {
                 spBuilder.setInpin(allBELPins.getIndex(sitePIP.getInputPin()));
                 spBuilder.setOutpin(allBELPins.getIndex(sitePIP.getOutputPin()));
             }
-            */
+*/
 
             design.removeSiteInst(siteInst);
         }
 
         for (Entry<SiteTypeEnum,Site> e : siteTypes.entrySet()) {
-            /*
+/*
             Site site = e.getValue();
 
             SiteType.Builder siteType = siteTypesList.get(i);
@@ -722,7 +690,7 @@ public class DeviceResourcesWriterSqlite {
                 }
                 altSiteTypesBuilder.set(j, siteTypeIdx);
             }
-            */
+*/
         }
     }
 /*
@@ -985,6 +953,5 @@ public class DeviceResourcesWriterSqlite {
             wireType.setCategory(WireType.intentToCategory(intent));
         }
     }
-
 */
 }
