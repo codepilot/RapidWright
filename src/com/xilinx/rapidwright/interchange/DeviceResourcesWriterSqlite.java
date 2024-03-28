@@ -87,6 +87,8 @@ public class DeviceResourcesWriterSqlite {
     private static PreparedStatement ps_strList_insert;
     private static PreparedStatement ps_name_insert;
     private static PreparedStatement ps_siteTypeList_insert;
+    private static PreparedStatement ps_bels_insert;
+    private static PreparedStatement ps_belCategories_insert;
     private static StringEnumerator allStrings;
     private static IdentityEnumerator<SiteTypeEnum> allSiteTypes;
 
@@ -121,6 +123,28 @@ public class DeviceResourcesWriterSqlite {
     public static long insert_siteType(String name) {
         return rowid_insert_string(ps_siteTypeList_insert, name);
     }
+
+    public static long insert_bel(long rowid_siteType, BEL bel) {
+        try {
+            ps_bels_insert.clearParameters();
+            ps_bels_insert.setLong(1, rowid_siteType);
+            ps_bels_insert.setString(2, bel.getName());
+            ps_bels_insert.setString(3, bel.getBELType());
+            BELClass category = bel.getBELClass();
+            if (category == BELClass.BEL) ps_bels_insert.setString(4, "logic");
+            if (category == BELClass.RBEL) ps_bels_insert.setString(4, "routing");
+            if (category == BELClass.PORT) ps_bels_insert.setString(4, "sitePort");
+
+            ResultSet rs1 = ps_bels_insert.executeQuery();
+            long rowid = rs1.getLong(1);
+            rs1.close();
+            return rowid;
+        }
+        catch(SQLException e) {
+          e.printStackTrace(System.err);
+          return 0;
+        }
+      }
 
     public static void populateSiteEnumerations(SiteInst siteInst, Site site) {
         if (!siteTypes.containsKey(siteInst.getSiteTypeEnum())) {
@@ -312,10 +336,18 @@ public class DeviceResourcesWriterSqlite {
             statement.execute(Files.readString(Paths.get("interchange/fpga-sqlite-schema/DeviceResources/strList/create.sql")));
             statement.execute(Files.readString(Paths.get("interchange/fpga-sqlite-schema/DeviceResources/name/create.sql")));
             statement.execute(Files.readString(Paths.get("interchange/fpga-sqlite-schema/DeviceResources/siteTypeList/create.sql")));
+            statement.execute(Files.readString(Paths.get("interchange/fpga-sqlite-schema/DeviceResources/belCategories/create.sql")));
+            statement.execute(Files.readString(Paths.get("interchange/fpga-sqlite-schema/DeviceResources/bels/create.sql")));
 
             ps_strList_insert = connection.prepareStatement(Files.readString(Paths.get("interchange/fpga-sqlite-schema/DeviceResources/strList/insert.sql")));
             ps_name_insert = connection.prepareStatement(Files.readString(Paths.get("interchange/fpga-sqlite-schema/DeviceResources/name/insert.sql")));
             ps_siteTypeList_insert = connection.prepareStatement(Files.readString(Paths.get("interchange/fpga-sqlite-schema/DeviceResources/siteTypeList/insert.sql")));
+            ps_bels_insert = connection.prepareStatement(Files.readString(Paths.get("interchange/fpga-sqlite-schema/DeviceResources/bels/insert.sql")));
+            ps_belCategories_insert = connection.prepareStatement(Files.readString(Paths.get("interchange/fpga-sqlite-schema/DeviceResources/belCategories/insert.sql")));
+
+            rowid_insert_string(ps_belCategories_insert, "logic");
+            rowid_insert_string(ps_belCategories_insert, "routing");
+            rowid_insert_string(ps_belCategories_insert, "sitePort");
 
             connection.setAutoCommit(false);
             statement.execute("PRAGMA main.defer_foreign_keys = 1;");
@@ -559,17 +591,6 @@ public class DeviceResourcesWriterSqlite {
         }
     }
 
-    protected static BELCategory getBELCategory(BEL bel) {
-        BELClass category = bel.getBELClass();
-        if (category == BELClass.BEL)
-            return BELCategory.LOGIC;
-        if (category == BELClass.RBEL)
-            return BELCategory.ROUTING;
-        if (category == BELClass.PORT)
-            return BELCategory.SITE_PORT;
-        return BELCategory._NOT_IN_SCHEMA;
-    }
-
     protected static Direction getBELPinDirection(BELPin belPin) {
         BELPin.Direction dir = belPin.getDir();
         if (dir == BELPin.Direction.INPUT)
@@ -586,36 +607,31 @@ public class DeviceResourcesWriterSqlite {
             Site site = e.getValue();
             SiteInst siteInst = design.createSiteInst("site_instance", e.getKey(), site);
             Tile tile = siteInst.getTile();
-            insert_siteType(e.getKey().name());
+            long rowid_siteType = insert_siteType(e.getKey().name());
 
             allSiteTypes.addObject(e.getKey());
 
-            /*
             IdentityEnumerator<BELPin> allBELPins = new IdentityEnumerator<BELPin>();
-
+            
             // BELs
-            StructList.Builder<Builder> belBuilders = siteType.initBels(siteInst.getBELs().length);
+
             for (int j=0; j < siteInst.getBELs().length; j++) {
-                BEL bel = siteInst.getBELs()[j];
-                Builder belBuilder = belBuilders.get(j);
-                belBuilder.setName(allStrings.getIndex(bel.getName()));
-                belBuilder.setType(allStrings.getIndex(bel.getBELType()));
-                PrimitiveList.Int.Builder belPinsBuilder = belBuilder.initPins(bel.getPins().length);
-                for (int k=0; k < bel.getPins().length; k++) {
-                    BELPin belPin = bel.getPin(k);
-                    belPinsBuilder.set(k, allBELPins.getIndex(belPin));
-                }
-                belBuilder.setCategory(getBELCategory(bel));
-
-                if (bel.canInvert()) {
-                    BELInverter.Builder belInverter = belBuilder.initInverting();
-                    belInverter.setNonInvertingPin(allBELPins.getIndex(bel.getNonInvertingPin()));
-                    belInverter.setInvertingPin(allBELPins.getIndex(bel.getInvertingPin()));
-                } else {
-                    belBuilder.setNonInverting(Void.VOID);
-                }
+                insert_bel(rowid_siteType, siteInst.getBELs()[j]);
+                // PrimitiveList.Int.Builder belPinsBuilder = belBuilder.initPins(bel.getPins().length);
+                // for (int k=0; k < bel.getPins().length; k++) {
+                //     BELPin belPin = bel.getPin(k);
+                //     belPinsBuilder.set(k, allBELPins.getIndex(belPin));
+                // }
+                // if (bel.canInvert()) {
+                //     BELInverter.Builder belInverter = belBuilder.initInverting();
+                //     belInverter.setNonInvertingPin(allBELPins.getIndex(bel.getNonInvertingPin()));
+                //     belInverter.setInvertingPin(allBELPins.getIndex(bel.getInvertingPin()));
+                // } else {
+                //     belBuilder.setNonInverting(Void.VOID);
+                // }
             }
-
+            
+            /*
             // SitePins
             int highestIndexInputPin = siteInst.getHighestSitePinInputIndex();
             ArrayList<String> pinNames = new ArrayList<String>();
