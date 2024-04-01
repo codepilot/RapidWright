@@ -47,7 +47,6 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
 import java.sql.PreparedStatement;
-
 import com.xilinx.rapidwright.design.Design;
 import com.xilinx.rapidwright.design.DesignTools;
 import com.xilinx.rapidwright.design.SiteInst;
@@ -58,7 +57,9 @@ import com.xilinx.rapidwright.device.BEL;
 import com.xilinx.rapidwright.device.BELClass;
 import com.xilinx.rapidwright.device.BELPin;
 import com.xilinx.rapidwright.device.Device;
+import com.xilinx.rapidwright.device.FamilyType;
 import com.xilinx.rapidwright.device.Grade;
+import com.xilinx.rapidwright.device.IOBankType;
 import com.xilinx.rapidwright.device.IOStandard;
 import com.xilinx.rapidwright.device.IntentCode;
 import com.xilinx.rapidwright.device.Node;
@@ -70,6 +71,7 @@ import com.xilinx.rapidwright.device.PseudoPIPHelper;
 import com.xilinx.rapidwright.device.Series;
 import com.xilinx.rapidwright.device.Site;
 import com.xilinx.rapidwright.device.SitePIP;
+import com.xilinx.rapidwright.device.SitePIPStatus;
 import com.xilinx.rapidwright.device.SiteTypeEnum;
 import com.xilinx.rapidwright.device.Tile;
 import com.xilinx.rapidwright.device.TileTypeEnum;
@@ -88,6 +90,7 @@ public class DeviceResourcesWriterSqlite {
     private static PreparedStatement ps_siteTypeList_insert;
     private static PreparedStatement ps_bels_insert;
     private static PreparedStatement ps_belCategories_insert;
+    private static PreparedStatement ps_belPins_insert;
     private static IdentityEnumerator<SiteTypeEnum> allSiteTypes;
 
     private static HashMap<TileTypeEnum,Tile> tileTypes;
@@ -135,7 +138,30 @@ public class DeviceResourcesWriterSqlite {
           e.printStackTrace(System.err);
           return 0;
         }
-      }
+    }
+
+    public static long insert_belPin(long rowid_siteType, BELPin belPin) {
+        if(belPin == null) return 0;
+        try {
+            ps_belPins_insert.clearParameters();
+            ps_belPins_insert.setLong(1, rowid_siteType);
+            ps_belPins_insert.setString(2, belPin.getName());
+            BELPin.Direction dir = belPin.getDir();
+            if (dir == BELPin.Direction.INPUT) ps_belPins_insert.setString(3, "input");
+            if (dir == BELPin.Direction.OUTPUT) ps_belPins_insert.setString(3, "output");
+            if (dir == BELPin.Direction.BIDIRECTIONAL) ps_belPins_insert.setString(3, "inout");
+            ps_belPins_insert.setString(4, belPin.getBEL().getName());
+
+            ResultSet rs1 = ps_belPins_insert.executeQuery();
+            long rowid = rs1.getLong(1);
+            rs1.close();
+            return rowid;
+        }
+        catch(SQLException e) {
+            e.printStackTrace(System.err);
+            return 0;
+        }
+    }
 
     public static void populateSiteEnumerations(SiteInst siteInst, Site site) {
         if (!siteTypes.containsKey(siteInst.getSiteTypeEnum())) {
@@ -279,9 +305,8 @@ public class DeviceResourcesWriterSqlite {
 
         t.start("populateEnums");
 
-        String sqlitePath = ("jdbc:sqlite:" + fileName);
         try {
-            connection = DriverManager.getConnection(sqlitePath);
+            connection = DriverManager.getConnection("jdbc:sqlite:");
             Statement statement = connection.createStatement();
             statement.setQueryTimeout(30);  // set timeout to 30 sec.
 
@@ -297,15 +322,53 @@ public class DeviceResourcesWriterSqlite {
             statement.execute(Files.readString(Paths.get("interchange/fpga-sqlite-schema/DeviceResources/siteTypeList/create.sql")));
             statement.execute(Files.readString(Paths.get("interchange/fpga-sqlite-schema/DeviceResources/belCategories/create.sql")));
             statement.execute(Files.readString(Paths.get("interchange/fpga-sqlite-schema/DeviceResources/bels/create.sql")));
+            statement.execute(Files.readString(Paths.get("interchange/fpga-sqlite-schema/DeviceResources/belPins/create.sql")));
+
+            statement.execute(Files.readString(Paths.get("interchange/fpga-sqlite-schema/DeviceResources/enum_BELClass/create.sql")));
+            statement.execute(Files.readString(Paths.get("interchange/fpga-sqlite-schema/DeviceResources/enum_BELPin_Direction/create.sql")));
+            statement.execute(Files.readString(Paths.get("interchange/fpga-sqlite-schema/DeviceResources/enum_FamilyType/create.sql")));
+            statement.execute(Files.readString(Paths.get("interchange/fpga-sqlite-schema/DeviceResources/enum_IntentCode/create.sql")));
+            statement.execute(Files.readString(Paths.get("interchange/fpga-sqlite-schema/DeviceResources/enum_IOBankType/create.sql")));
+            statement.execute(Files.readString(Paths.get("interchange/fpga-sqlite-schema/DeviceResources/enum_IOStandard/create.sql")));
+            statement.execute(Files.readString(Paths.get("interchange/fpga-sqlite-schema/DeviceResources/enum_PIPType/create.sql")));
+            statement.execute(Files.readString(Paths.get("interchange/fpga-sqlite-schema/DeviceResources/enum_Series/create.sql")));
+            statement.execute(Files.readString(Paths.get("interchange/fpga-sqlite-schema/DeviceResources/enum_SitePIPStatus/create.sql")));
+            statement.execute(Files.readString(Paths.get("interchange/fpga-sqlite-schema/DeviceResources/enum_SiteTypeEnum/create.sql")));
+            statement.execute(Files.readString(Paths.get("interchange/fpga-sqlite-schema/DeviceResources/enum_TileTypeEnum/create.sql")));
 
             ps_name_insert = connection.prepareStatement(Files.readString(Paths.get("interchange/fpga-sqlite-schema/DeviceResources/name/insert.sql")));
             ps_siteTypeList_insert = connection.prepareStatement(Files.readString(Paths.get("interchange/fpga-sqlite-schema/DeviceResources/siteTypeList/insert.sql")));
             ps_bels_insert = connection.prepareStatement(Files.readString(Paths.get("interchange/fpga-sqlite-schema/DeviceResources/bels/insert.sql")));
             ps_belCategories_insert = connection.prepareStatement(Files.readString(Paths.get("interchange/fpga-sqlite-schema/DeviceResources/belCategories/insert.sql")));
+            ps_belPins_insert = connection.prepareStatement(Files.readString(Paths.get("interchange/fpga-sqlite-schema/DeviceResources/belPins/insert.sql")));
 
             rowid_insert_string(ps_belCategories_insert, "logic");
             rowid_insert_string(ps_belCategories_insert, "routing");
             rowid_insert_string(ps_belCategories_insert, "sitePort");
+
+            PreparedStatement ps_enum_BELClass_insert = connection.prepareStatement(Files.readString(Paths.get("interchange/fpga-sqlite-schema/DeviceResources/enum_BELClass/insert.sql")));
+            PreparedStatement ps_enum_BELPin_Direction_insert = connection.prepareStatement(Files.readString(Paths.get("interchange/fpga-sqlite-schema/DeviceResources/enum_BELPin_Direction/insert.sql")));
+            PreparedStatement ps_enum_FamilyType_insert = connection.prepareStatement(Files.readString(Paths.get("interchange/fpga-sqlite-schema/DeviceResources/enum_FamilyType/insert.sql")));
+            PreparedStatement ps_enum_IntentCode_insert = connection.prepareStatement(Files.readString(Paths.get("interchange/fpga-sqlite-schema/DeviceResources/enum_IntentCode/insert.sql")));
+            PreparedStatement ps_enum_IOBankType_insert = connection.prepareStatement(Files.readString(Paths.get("interchange/fpga-sqlite-schema/DeviceResources/enum_IOBankType/insert.sql")));
+            PreparedStatement ps_enum_IOStandard_insert = connection.prepareStatement(Files.readString(Paths.get("interchange/fpga-sqlite-schema/DeviceResources/enum_IOStandard/insert.sql")));
+            PreparedStatement ps_enum_PIPType_insert = connection.prepareStatement(Files.readString(Paths.get("interchange/fpga-sqlite-schema/DeviceResources/enum_PIPType/insert.sql")));
+            PreparedStatement ps_enum_Series_insert = connection.prepareStatement(Files.readString(Paths.get("interchange/fpga-sqlite-schema/DeviceResources/enum_Series/insert.sql")));
+            PreparedStatement ps_enum_SitePIPStatus_insert = connection.prepareStatement(Files.readString(Paths.get("interchange/fpga-sqlite-schema/DeviceResources/enum_SitePIPStatus/insert.sql")));
+            PreparedStatement ps_enum_SiteTypeEnum_insert = connection.prepareStatement(Files.readString(Paths.get("interchange/fpga-sqlite-schema/DeviceResources/enum_SiteTypeEnum/insert.sql")));
+            PreparedStatement ps_enum_TileTypeEnum_insert = connection.prepareStatement(Files.readString(Paths.get("interchange/fpga-sqlite-schema/DeviceResources/enum_TileTypeEnum/insert.sql")));
+
+            for (BELClass c : BELClass.values()) rowid_insert_string(ps_enum_BELClass_insert, c.toString());
+            for (BELPin.Direction c : BELPin.Direction.values()) rowid_insert_string(ps_enum_BELPin_Direction_insert, c.toString());
+            for (FamilyType c : FamilyType.values()) rowid_insert_string(ps_enum_FamilyType_insert, c.toString());
+            for (IntentCode c: IntentCode.values()) rowid_insert_string(ps_enum_IntentCode_insert, c.toString());
+            for (IOBankType c: IOBankType.values()) rowid_insert_string(ps_enum_IOBankType_insert, c.toString());
+            for (IOStandard c: IOStandard.values()) rowid_insert_string(ps_enum_IOStandard_insert, c.toString());
+            for (PIPType c: PIPType.values()) rowid_insert_string(ps_enum_PIPType_insert, c.toString());
+            for (Series c: Series.values()) rowid_insert_string(ps_enum_Series_insert, c.toString());
+            for (SitePIPStatus c: SitePIPStatus.values()) rowid_insert_string(ps_enum_SitePIPStatus_insert, c.toString());
+            for (SiteTypeEnum c: SiteTypeEnum.values()) rowid_insert_string(ps_enum_SiteTypeEnum_insert, c.toString());
+            for (TileTypeEnum c: TileTypeEnum.values()) rowid_insert_string(ps_enum_TileTypeEnum_insert, c.toString());
 
             connection.setAutoCommit(false);
             statement.execute("PRAGMA main.defer_foreign_keys = 1;");
@@ -320,6 +383,8 @@ public class DeviceResourcesWriterSqlite {
 
             connection.commit();
             connection.setAutoCommit(true);
+            System.out.println("backup to " + fileName);
+            statement.executeUpdate("backup to " + fileName);
             connection.close();
 
         } catch(SQLException e) {
@@ -560,18 +625,8 @@ public class DeviceResourcesWriterSqlite {
             strList.set(i, new Text.Reader(allStrings.get(i)));
         }
     }
-
-    protected static Direction getBELPinDirection(BELPin belPin) {
-        BELPin.Direction dir = belPin.getDir();
-        if (dir == BELPin.Direction.INPUT)
-            return Direction.INPUT;
-        if (dir == BELPin.Direction.OUTPUT)
-            return Direction.OUTPUT;
-        if (dir == BELPin.Direction.BIDIRECTIONAL)
-            return Direction.INOUT;
-        return Direction._NOT_IN_SCHEMA;
-    }
 */
+
     public static void writeAllSiteTypesToBuilder(Design design, Device device) {
         for (Entry<SiteTypeEnum,Site> e : siteTypes.entrySet()) {
             Site site = e.getValue();
@@ -584,31 +639,31 @@ public class DeviceResourcesWriterSqlite {
             
             // BELs
             for (int j=0; j < siteInst.getBELs().length; j++) {
-                insert_bel(rowid_siteType, siteInst.getBELs()[j]);
+                BEL bel = siteInst.getBELs()[j];
+                insert_bel(rowid_siteType, bel);
                 // PrimitiveList.Int.Builder belPinsBuilder = belBuilder.initPins(bel.getPins().length);
-                // for (int k=0; k < bel.getPins().length; k++) {
-                //     BELPin belPin = bel.getPin(k);
-                //     belPinsBuilder.set(k, allBELPins.getIndex(belPin));
-                // }
+                for (int k=0; k < bel.getPins().length; k++) {
+                    BELPin belPin = bel.getPin(k);
+                    allBELPins.addObject(belPin);
+                }
                 // if (bel.canInvert()) {
                 //     BELInverter.Builder belInverter = belBuilder.initInverting();
-                //     belInverter.setNonInvertingPin(allBELPins.getIndex(bel.getNonInvertingPin()));
-                //     belInverter.setInvertingPin(allBELPins.getIndex(bel.getInvertingPin()));
+                allBELPins.addObject(bel.getNonInvertingPin());
+                allBELPins.addObject(bel.getInvertingPin());
                 // } else {
                 //     belBuilder.setNonInverting(Void.VOID);
                 // }
             }
             
-            /*
             // SitePins
             int highestIndexInputPin = siteInst.getHighestSitePinInputIndex();
             ArrayList<String> pinNames = new ArrayList<String>();
             for (String pinName : siteInst.getSitePinNames()) {
                 pinNames.add(pinName);
             }
-            siteType.setLastInput(highestIndexInputPin);
+            // siteType.setLastInput(highestIndexInputPin);
 
-            StructList.Builder<SitePin.Builder> pins = siteType.initPins(pinNames.size());
+            // StructList.Builder<SitePin.Builder> pins = siteType.initPins(pinNames.size());
             for (int j=0; j < pinNames.size(); j++) {
                 String primarySitePinName = pinNames.get(j);
                 int sitePinIndex = site.getPinIndex(pinNames.get(j));
@@ -621,43 +676,38 @@ public class DeviceResourcesWriterSqlite {
                     throw new RuntimeException("Failed to find pin index for site " + site.getName() + " site type " + e.getKey().name()+ " site pin " + primarySitePinName + " / " + pinNames.get(j));
                 }
 
-                SitePin.Builder pin = pins.get(j);
-                pin.setName(allStrings.getIndex(pinNames.get(j)));
-                pin.setDir(j <= highestIndexInputPin ? Direction.INPUT : Direction.OUTPUT);
+                // SitePin.Builder pin = pins.get(j);
+                // pin.setName(allStrings.getIndex(pinNames.get(j)));
+                // pin.setDir(j <= highestIndexInputPin ? Direction.INPUT : Direction.OUTPUT);
                 BEL bel = siteInst.getBEL(pinNames.get(j));
                 BELPin[] belPins = bel.getPins();
                 if (belPins.length != 1) {
                     throw new RuntimeException("Only expected 1 BEL pin on site pin BEL.");
                 }
                 BELPin belPin = belPins[0];
-                pin.setBelpin(allBELPins.getIndex(belPin));
+                allBELPins.addObject(belPin);
             }
 
             // SiteWires
             String[] siteWires = siteInst.getSiteWires();
-            StructList.Builder<SiteWire.Builder> swBuilders =
-                    siteType.initSiteWires(siteWires.length);
+            // StructList.Builder<SiteWire.Builder> swBuilders =
+            //         siteType.initSiteWires(siteWires.length);
             for (int j=0; j < siteWires.length; j++) {
-                SiteWire.Builder swBuilder = swBuilders.get(j);
+                // SiteWire.Builder swBuilder = swBuilders.get(j);
                 String siteWireName = siteWires[j];
-                swBuilder.setName(allStrings.getIndex(siteWireName));
+                // swBuilder.setName(allStrings.getIndex(siteWireName));
                 BELPin[] swPins = siteInst.getSiteWirePins(siteWireName);
-                PrimitiveList.Int.Builder bpBuilders = swBuilder.initPins(swPins.length);
+                // PrimitiveList.Int.Builder bpBuilders = swBuilder.initPins(swPins.length);
                 for (int k=0; k < swPins.length; k++) {
-                    bpBuilders.set(k, allBELPins.getIndex(swPins[k]));
+                    allBELPins.addObject(swPins[k]);
                 }
             }
-
+            
             // Write out BEL pins.
-            StructList.Builder<DeviceResources.Device.BELPin.Builder> belPinBuilders =
-                    siteType.initBelPins(allBELPins.size());
             for (int j=0; j < allBELPins.size(); j++) {
-                DeviceResources.Device.BELPin.Builder belPinBuilder = belPinBuilders.get(j);
-                BELPin belPin = allBELPins.get(j);
-                belPinBuilder.setName(allStrings.getIndex(belPin.getName()));
-                belPinBuilder.setDir(getBELPinDirection(belPin));
-                belPinBuilder.setBel(allStrings.getIndex(belPin.getBEL().getName()));
+                insert_belPin(rowid_siteType, allBELPins.get(j));
             }
+            /*
             SitePIP[] allSitePIPs = siteInst.getSitePIPs();
 
             // Write out SitePIPs
@@ -690,7 +740,8 @@ public class DeviceResourcesWriterSqlite {
                 }
                 altSiteTypesBuilder.set(j, siteTypeIdx);
             }
-*/
+
+            */
         }
     }
 /*
