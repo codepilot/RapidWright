@@ -81,6 +81,7 @@ import com.xilinx.rapidwright.edif.EDIFCellInst;
 import com.xilinx.rapidwright.edif.EDIFLibrary;
 import com.xilinx.rapidwright.edif.EDIFNetlist;
 import com.xilinx.rapidwright.edif.EDIFTools;
+import com.xilinx.rapidwright.interchange.DeviceResources.Device.WireCategory;
 import com.xilinx.rapidwright.tests.CodePerfTracker;
 import com.xilinx.rapidwright.util.Pair;
 
@@ -99,6 +100,21 @@ public class DeviceResourcesWriterSqlite {
     public static long rowid_insert_string(PreparedStatement ps, String str) {
         try {
             ps.setString(1, str);
+            ResultSet rs1 = ps.executeQuery();
+            long rowid = rs1.getLong(1);
+            rs1.close();
+            return rowid;
+        }
+        catch(SQLException e) {
+          e.printStackTrace(System.err);
+          return 0;
+        }
+    }
+
+    public static long rowid_insert_string_string(PreparedStatement ps, String strA, String strB) {
+        try {
+            ps.setString(1, strA);
+            ps.setString(2, strB);
             ResultSet rs1 = ps.executeQuery();
             long rowid = rs1.getLong(1);
             rs1.close();
@@ -310,13 +326,8 @@ public class DeviceResourcesWriterSqlite {
             Statement statement = connection.createStatement();
             statement.setQueryTimeout(30);  // set timeout to 30 sec.
 
-            statement.execute("PRAGMA main.auto_vacuum = 1;");
-            statement.execute("PRAGMA main.cache_size = -4096;");
             statement.execute("PRAGMA main.encoding = 'UTF-8';");
             statement.execute("PRAGMA main.foreign_keys = 1;");
-            statement.execute("PRAGMA main.mmap_size = 0x7FFFFFFFFFFFFFFF;");
-            statement.execute("PRAGMA user_version = 1;");
-            statement.execute("PRAGMA main.journal_mode = WAL;");
 
             statement.execute(Files.readString(Paths.get("interchange/fpga-sqlite-schema/DeviceResources/name/create.sql")));
             statement.execute(Files.readString(Paths.get("interchange/fpga-sqlite-schema/DeviceResources/siteTypeList/create.sql")));
@@ -335,6 +346,7 @@ public class DeviceResourcesWriterSqlite {
             statement.execute(Files.readString(Paths.get("interchange/fpga-sqlite-schema/DeviceResources/enum_SitePIPStatus/create.sql")));
             statement.execute(Files.readString(Paths.get("interchange/fpga-sqlite-schema/DeviceResources/enum_SiteTypeEnum/create.sql")));
             statement.execute(Files.readString(Paths.get("interchange/fpga-sqlite-schema/DeviceResources/enum_TileTypeEnum/create.sql")));
+            statement.execute(Files.readString(Paths.get("interchange/fpga-sqlite-schema/DeviceResources/enum_WireCategory/create.sql")));
 
             ps_name_insert = connection.prepareStatement(Files.readString(Paths.get("interchange/fpga-sqlite-schema/DeviceResources/name/insert.sql")));
             ps_siteTypeList_insert = connection.prepareStatement(Files.readString(Paths.get("interchange/fpga-sqlite-schema/DeviceResources/siteTypeList/insert.sql")));
@@ -357,11 +369,11 @@ public class DeviceResourcesWriterSqlite {
             PreparedStatement ps_enum_SitePIPStatus_insert = connection.prepareStatement(Files.readString(Paths.get("interchange/fpga-sqlite-schema/DeviceResources/enum_SitePIPStatus/insert.sql")));
             PreparedStatement ps_enum_SiteTypeEnum_insert = connection.prepareStatement(Files.readString(Paths.get("interchange/fpga-sqlite-schema/DeviceResources/enum_SiteTypeEnum/insert.sql")));
             PreparedStatement ps_enum_TileTypeEnum_insert = connection.prepareStatement(Files.readString(Paths.get("interchange/fpga-sqlite-schema/DeviceResources/enum_TileTypeEnum/insert.sql")));
+            PreparedStatement ps_enum_WireCategory_insert = connection.prepareStatement(Files.readString(Paths.get("interchange/fpga-sqlite-schema/DeviceResources/enum_WireCategory/insert.sql")));
 
             for (BELClass c : BELClass.values()) rowid_insert_string(ps_enum_BELClass_insert, c.toString());
             for (BELPin.Direction c : BELPin.Direction.values()) rowid_insert_string(ps_enum_BELPin_Direction_insert, c.toString());
             for (FamilyType c : FamilyType.values()) rowid_insert_string(ps_enum_FamilyType_insert, c.toString());
-            for (IntentCode c: IntentCode.values()) rowid_insert_string(ps_enum_IntentCode_insert, c.toString());
             for (IOBankType c: IOBankType.values()) rowid_insert_string(ps_enum_IOBankType_insert, c.toString());
             for (IOStandard c: IOStandard.values()) rowid_insert_string(ps_enum_IOStandard_insert, c.toString());
             for (PIPType c: PIPType.values()) rowid_insert_string(ps_enum_PIPType_insert, c.toString());
@@ -369,6 +381,8 @@ public class DeviceResourcesWriterSqlite {
             for (SitePIPStatus c: SitePIPStatus.values()) rowid_insert_string(ps_enum_SitePIPStatus_insert, c.toString());
             for (SiteTypeEnum c: SiteTypeEnum.values()) rowid_insert_string(ps_enum_SiteTypeEnum_insert, c.toString());
             for (TileTypeEnum c: TileTypeEnum.values()) rowid_insert_string(ps_enum_TileTypeEnum_insert, c.toString());
+            for (WireCategory c: WireCategory.values()) rowid_insert_string(ps_enum_WireCategory_insert, c.toString());
+            for (IntentCode c: IntentCode.values()) rowid_insert_string_string(ps_enum_IntentCode_insert, c.toString(), WireType.intentToCategory(c).toString());
 
             connection.setAutoCommit(false);
             statement.execute("PRAGMA main.defer_foreign_keys = 1;");
@@ -381,251 +395,230 @@ public class DeviceResourcesWriterSqlite {
     
             t.stop().start("TileTypes");
 
+            /*
+            
+            Map<TileTypeEnum, Integer> tileTypeIndicies = writeAllTileTypesToBuilder(design, device, devBuilder);
+            Map<TileTypeEnum, TileType.Builder> tileTypesObj = new HashMap<TileTypeEnum, TileType.Builder>();
+            for (Map.Entry<TileTypeEnum, Integer> tileType : tileTypeIndicies.entrySet()) {
+                tileTypesObj.put(tileType.getKey(), devBuilder.getTileTypeList().get(tileType.getValue()));
+            }
+            */
+            t.stop().start("Tiles");
+            /*
+            writeAllTilesToBuilder(device, devBuilder, tileTypeIndicies);
+
+            */
+            t.stop().start("Wires&Nodes");
+            /*
+            writeAllWiresAndNodesToBuilder(device, devBuilder, skipRouteResources);
+            */
+
+            t.stop().start("Prims&Macros");
+            /*
+            // Create an EDIFNetlist populated with just primitive and macro libraries
+            EDIFLibrary prims = Design.getPrimitivesLibrary(device.getName());
+            EDIFLibrary macros = Design.getMacroPrimitives(series);
+            Set<EDIFCell> unsupportedMacros = new HashSet<>();
+            EDIFNetlist netlist = new EDIFNetlist("PrimitiveLibs");
+            netlist.addLibrary(prims);
+            netlist.addLibrary(macros);
+            List<EDIFCell> dupsToRemove = new ArrayList<EDIFCell>();
+            for (EDIFCell hdiCell : prims.getCells()) {
+                EDIFCell cell = macros.getCell(hdiCell.getName());
+                if (cell != null) {
+                    dupsToRemove.add(hdiCell);
+                }
+            }
+
+            for (EDIFCell dupCell : dupsToRemove) {
+                prims.removeCell(dupCell);
+            }
+
+            for (EDIFCell cell : macros.getCells()) {
+                for (EDIFCellInst inst : cell.getCellInsts()) {
+                    EDIFCell instCell = inst.getCellType();
+                    if (!prims.containsCell(instCell) && !macros.containsCell(instCell)) {
+                        unsupportedMacros.add(cell);
+                        continue;
+                    }
+                    EDIFCell macroCell = macros.getCell(instCell.getName());
+                    if (macroCell != null && !unsupportedMacros.contains(macroCell)) {
+                        // remap cell definition to macro library
+                        inst.setCellType(macroCell);
+                    }
+                }
+            }
+
+            // Not all devices have all the primitives to support all macros, thus we will remove
+            // them to avoid stale references
+            for (EDIFCell macro : new ArrayList<>(macros.getCells())) {
+                if (containsUnusedMacros(macro, unsupportedMacros)) {
+                    macros.removeCell(macro);
+                }
+            }
+
+            Map<String, Pair<String, EnumSet<IOStandard>>> macroCollapseExceptionMap =
+                    EDIFNetlist.macroCollapseExceptionMap.getOrDefault(series, Collections.emptyMap());
+            List<Unisim> unisims = new ArrayList<Unisim>();
+            for (EDIFCell cell : macros.getCells()) {
+                String cellName = cell.getName();
+                Pair<String, EnumSet<IOStandard>> entry = macroCollapseExceptionMap.get(cellName);
+                if (entry != null) {
+                    cellName = entry.getFirst();
+                }
+                Unisim unisim = Unisim.valueOf(cellName);
+                Map<String,String> invertiblePins = DesignTools.getInvertiblePinMap(series, unisim);
+                if (invertiblePins != null && invertiblePins.size() > 0) {
+                    unisims.add(unisim);
+                }
+            }
+            for (EDIFCell cell : prims.getCells()) {
+                Unisim unisim = Unisim.valueOf(cell.getName());
+                Map<String,String> invertiblePins = DesignTools.getInvertiblePinMap(series, unisim);
+                if (invertiblePins != null && invertiblePins.size() > 0) {
+                    unisims.add(unisim);
+                }
+            }
+
+            StructList.Builder<CellInversion.Builder> cellInversions = devBuilder.initCellInversions(unisims.size());
+            for (int i = 0; i < unisims.size(); ++i) {
+                Unisim unisim = unisims.get(i);
+                CellInversion.Builder cellInversion = cellInversions.get(i);
+                cellInversion.setCell(allStrings.getIndex(unisim.name()));
+
+                Map<String,String> invertiblePins = DesignTools.getInvertiblePinMap(series, unisim);
+                StructList.Builder<CellPinInversion.Builder> cellPinInversions = cellInversion.initCellPins(invertiblePins.size());
+
+                int j = 0;
+                for (Map.Entry<String, String> entry : invertiblePins.entrySet()) {
+                    String port = entry.getKey();
+                    String parameterStr = entry.getValue();
+
+                    CellPinInversion.Builder pinInversion = cellPinInversions.get(j);
+                    j += 1;
+
+                    pinInversion.setCellPin(allStrings.getIndex(port));
+
+                    CellPinInversionParameter.Builder param = pinInversion.getNotInverting();
+                    PropertyMap.Entry.Builder parameter = param.initParameter();
+                    parameter.setKey(allStrings.getIndex(parameterStr));
+                    parameter.setTextValue(allStrings.getIndex("1'b0"));
+
+                    param = pinInversion.getInverting();
+                    parameter = param.initParameter();
+                    parameter.setKey(allStrings.getIndex(parameterStr));
+                    parameter.setTextValue(allStrings.getIndex("1'b1"));
+                }
+            }
+
+            Netlist.Builder netlistBuilder = devBuilder.getPrimLibs();
+            netlistBuilder.setName(netlist.getName());
+            LogNetlistWriter writer = new LogNetlistWriter(allStrings, new HashMap<String, String>() {{
+                        put(EDIFTools.EDIF_LIBRARY_HDI_PRIMITIVES_NAME, LogNetlistWriter.DEVICE_PRIMITIVES_LIB);
+                        put(series+"_"+EDIFTools.MACRO_PRIMITIVES_LIB, LogNetlistWriter.DEVICE_MACROS_LIB);
+                    }}
+                );
+            writer.populateNetlistBuilder(netlist, netlistBuilder, CodePerfTracker.SILENT);
+
+            writeCellParameterDefinitions(series, netlist, devBuilder.getParameterDefs());
+
+            // Write macro exception map
+            Map<String, Pair<String, EnumSet<IOStandard>>> expandMap =
+                    EDIFNetlist.macroExpandExceptionMap.getOrDefault(series, Collections.emptyMap());
+            Map<String, MacroParamRule[]> paramRules = MacroParamMappingRules.macroRules.get(series);
+            Set<String> exceptionMacros = new TreeSet<>(expandMap.keySet());
+            exceptionMacros.addAll(paramRules.keySet());
+            int size = exceptionMacros.size();
+            StructList.Builder<PrimToMacroExpansion.Builder> exceptionMap =
+                    devBuilder.initExceptionMap(size);
+            int i=0;
+            int ioStdPropIdx = allStrings.getIndex(EDIFNetlist.IOSTANDARD_PROP);
+            for (String macroName : exceptionMacros) {
+                PrimToMacroExpansion.Builder entryBuilder = exceptionMap.get(i);
+                entryBuilder.setPrimName(allStrings.getIndex(macroName));
+                entryBuilder.setMacroName(allStrings.getIndex(macroName));
+
+                // Check if this macro has an expansion exception
+                if (expandMap.containsKey(macroName)) {
+                    Pair<String, EnumSet<IOStandard>> expandException = expandMap.get(macroName);
+                    entryBuilder.setMacroName(allStrings.getIndex(expandException.getFirst()));
+
+                    StructList.Builder<PropertyMap.Entry.Builder> ioStdEntries =
+                            entryBuilder.initParameters(expandException.getSecond().size());
+                    int j=0;
+                    for (IOStandard ioStd : expandException.getSecond()) {
+                        PropertyMap.Entry.Builder ioStdEntry = ioStdEntries.get(j);
+                        ioStdEntry.setKey(ioStdPropIdx);
+                        ioStdEntry.setTextValue(allStrings.getIndex(ioStd.name()));
+                        j++;
+                    }
+                }
+
+                // Check if this macro has a parameter propagation rule set
+                if (paramRules.containsKey(macroName)) {
+                    MacroParamRule[] rules = paramRules.get(macroName);
+                    StructList.Builder<ParameterMapRule.Builder> parameterMap =
+                            entryBuilder.initParamMapping(rules.length);
+                    int j=0;
+                    for (MacroParamRule rule : rules) {
+                        ParameterMapRule.Builder ruleBuilder = parameterMap.get(j);
+                        ruleBuilder.setPrimParam(allStrings.getIndex(rule.getPrimParam()));
+                        ruleBuilder.setInstName(allStrings.getIndex(rule.getInstName()));
+                        ruleBuilder.setInstParam(allStrings.getIndex(rule.getInstParam()));
+                        if (rule.getBitSlice() != null) {
+                            PrimitiveList.Int.Builder bitsBuilder =
+                                    ruleBuilder.initBitSlice(rule.getBitSlice().length);
+                            for (int k = 0; k < rule.getBitSlice().length; k++) {
+                                bitsBuilder.set(k, rule.getBitSlice()[k]);
+                            }
+                        } else if (rule.getTableLookup() != null) {
+                            // Lookup table
+                            StructList.Builder<ParameterMapEntry.Builder> tableBuilder =
+                                ruleBuilder.initTableLookup(rule.getTableLookup().length);
+                            for (int k = 0; k < rule.getTableLookup().length; k++) {
+                                ParameterMapEntry.Builder itemBuilder = tableBuilder.get(k);
+                                MacroParamTableEntry tableEntry = rule.getTableLookup()[k];
+                                itemBuilder.setFrom(allStrings.getIndex(tableEntry.from));
+                                itemBuilder.setFrom(allStrings.getIndex(tableEntry.to));
+                            }
+                        } else {
+                            ruleBuilder.setCopyValue(Void.VOID);
+                        }
+                        j++;
+                    }
+                }
+                i++;
+            }
+            */
+            t.stop().start("Cell <-> BEL pin map");
+            /*
+            EnumerateCellBelMapping.populateAllPinMappings(part, device, devBuilder, allStrings);
+
+            */
+            t.stop().start("Packages");
+            /*
+            populatePackages(allStrings, device, devBuilder);
+
+            */
+            t.stop().start("Constants");
+            /*
+            ConstantDefinitions.writeConstants(allStrings, device, devBuilder.initConstants(), design, siteTypes, tileTypesObj);
+
+            */
+            t.stop().start("Write File");
+
             connection.commit();
             connection.setAutoCommit(true);
-            System.out.println("backup to " + fileName);
             statement.executeUpdate("backup to " + fileName);
             connection.close();
 
+            t.stop();
+
         } catch(SQLException e) {
-          e.printStackTrace(System.err);
-        }
-        /*
-        
-        Map<TileTypeEnum, Integer> tileTypeIndicies = writeAllTileTypesToBuilder(design, device, devBuilder);
-        Map<TileTypeEnum, TileType.Builder> tileTypesObj = new HashMap<TileTypeEnum, TileType.Builder>();
-        for (Map.Entry<TileTypeEnum, Integer> tileType : tileTypeIndicies.entrySet()) {
-            tileTypesObj.put(tileType.getKey(), devBuilder.getTileTypeList().get(tileType.getValue()));
-        }
-        */
-        t.stop().start("Tiles");
-        /*
-        writeAllTilesToBuilder(device, devBuilder, tileTypeIndicies);
-
-        */
-        t.stop().start("Wires&Nodes");
-        /*
-        writeAllWiresAndNodesToBuilder(device, devBuilder, skipRouteResources);
-        */
-
-        t.stop().start("Prims&Macros");
-        /*
-        // Create an EDIFNetlist populated with just primitive and macro libraries
-        EDIFLibrary prims = Design.getPrimitivesLibrary(device.getName());
-        EDIFLibrary macros = Design.getMacroPrimitives(series);
-        Set<EDIFCell> unsupportedMacros = new HashSet<>();
-        EDIFNetlist netlist = new EDIFNetlist("PrimitiveLibs");
-        netlist.addLibrary(prims);
-        netlist.addLibrary(macros);
-        List<EDIFCell> dupsToRemove = new ArrayList<EDIFCell>();
-        for (EDIFCell hdiCell : prims.getCells()) {
-            EDIFCell cell = macros.getCell(hdiCell.getName());
-            if (cell != null) {
-                dupsToRemove.add(hdiCell);
-            }
+        e.printStackTrace(System.err);
         }
 
-        for (EDIFCell dupCell : dupsToRemove) {
-            prims.removeCell(dupCell);
-        }
-
-        for (EDIFCell cell : macros.getCells()) {
-            for (EDIFCellInst inst : cell.getCellInsts()) {
-                EDIFCell instCell = inst.getCellType();
-                if (!prims.containsCell(instCell) && !macros.containsCell(instCell)) {
-                    unsupportedMacros.add(cell);
-                    continue;
-                }
-                EDIFCell macroCell = macros.getCell(instCell.getName());
-                if (macroCell != null && !unsupportedMacros.contains(macroCell)) {
-                    // remap cell definition to macro library
-                    inst.setCellType(macroCell);
-                }
-            }
-        }
-
-        // Not all devices have all the primitives to support all macros, thus we will remove
-        // them to avoid stale references
-        for (EDIFCell macro : new ArrayList<>(macros.getCells())) {
-            if (containsUnusedMacros(macro, unsupportedMacros)) {
-                macros.removeCell(macro);
-            }
-        }
-
-        Map<String, Pair<String, EnumSet<IOStandard>>> macroCollapseExceptionMap =
-                EDIFNetlist.macroCollapseExceptionMap.getOrDefault(series, Collections.emptyMap());
-        List<Unisim> unisims = new ArrayList<Unisim>();
-        for (EDIFCell cell : macros.getCells()) {
-            String cellName = cell.getName();
-            Pair<String, EnumSet<IOStandard>> entry = macroCollapseExceptionMap.get(cellName);
-            if (entry != null) {
-                cellName = entry.getFirst();
-            }
-            Unisim unisim = Unisim.valueOf(cellName);
-            Map<String,String> invertiblePins = DesignTools.getInvertiblePinMap(series, unisim);
-            if (invertiblePins != null && invertiblePins.size() > 0) {
-                unisims.add(unisim);
-            }
-        }
-        for (EDIFCell cell : prims.getCells()) {
-            Unisim unisim = Unisim.valueOf(cell.getName());
-            Map<String,String> invertiblePins = DesignTools.getInvertiblePinMap(series, unisim);
-            if (invertiblePins != null && invertiblePins.size() > 0) {
-                unisims.add(unisim);
-            }
-        }
-
-        StructList.Builder<CellInversion.Builder> cellInversions = devBuilder.initCellInversions(unisims.size());
-        for (int i = 0; i < unisims.size(); ++i) {
-            Unisim unisim = unisims.get(i);
-            CellInversion.Builder cellInversion = cellInversions.get(i);
-            cellInversion.setCell(allStrings.getIndex(unisim.name()));
-
-            Map<String,String> invertiblePins = DesignTools.getInvertiblePinMap(series, unisim);
-            StructList.Builder<CellPinInversion.Builder> cellPinInversions = cellInversion.initCellPins(invertiblePins.size());
-
-            int j = 0;
-            for (Map.Entry<String, String> entry : invertiblePins.entrySet()) {
-                String port = entry.getKey();
-                String parameterStr = entry.getValue();
-
-                CellPinInversion.Builder pinInversion = cellPinInversions.get(j);
-                j += 1;
-
-                pinInversion.setCellPin(allStrings.getIndex(port));
-
-                CellPinInversionParameter.Builder param = pinInversion.getNotInverting();
-                PropertyMap.Entry.Builder parameter = param.initParameter();
-                parameter.setKey(allStrings.getIndex(parameterStr));
-                parameter.setTextValue(allStrings.getIndex("1'b0"));
-
-                param = pinInversion.getInverting();
-                parameter = param.initParameter();
-                parameter.setKey(allStrings.getIndex(parameterStr));
-                parameter.setTextValue(allStrings.getIndex("1'b1"));
-            }
-        }
-
-        Netlist.Builder netlistBuilder = devBuilder.getPrimLibs();
-        netlistBuilder.setName(netlist.getName());
-        LogNetlistWriter writer = new LogNetlistWriter(allStrings, new HashMap<String, String>() {{
-                    put(EDIFTools.EDIF_LIBRARY_HDI_PRIMITIVES_NAME, LogNetlistWriter.DEVICE_PRIMITIVES_LIB);
-                    put(series+"_"+EDIFTools.MACRO_PRIMITIVES_LIB, LogNetlistWriter.DEVICE_MACROS_LIB);
-                }}
-            );
-        writer.populateNetlistBuilder(netlist, netlistBuilder, CodePerfTracker.SILENT);
-
-        writeCellParameterDefinitions(series, netlist, devBuilder.getParameterDefs());
-
-        // Write macro exception map
-        Map<String, Pair<String, EnumSet<IOStandard>>> expandMap =
-                EDIFNetlist.macroExpandExceptionMap.getOrDefault(series, Collections.emptyMap());
-        Map<String, MacroParamRule[]> paramRules = MacroParamMappingRules.macroRules.get(series);
-        Set<String> exceptionMacros = new TreeSet<>(expandMap.keySet());
-        exceptionMacros.addAll(paramRules.keySet());
-        int size = exceptionMacros.size();
-        StructList.Builder<PrimToMacroExpansion.Builder> exceptionMap =
-                devBuilder.initExceptionMap(size);
-        int i=0;
-        int ioStdPropIdx = allStrings.getIndex(EDIFNetlist.IOSTANDARD_PROP);
-        for (String macroName : exceptionMacros) {
-            PrimToMacroExpansion.Builder entryBuilder = exceptionMap.get(i);
-            entryBuilder.setPrimName(allStrings.getIndex(macroName));
-            entryBuilder.setMacroName(allStrings.getIndex(macroName));
-
-            // Check if this macro has an expansion exception
-            if (expandMap.containsKey(macroName)) {
-                Pair<String, EnumSet<IOStandard>> expandException = expandMap.get(macroName);
-                entryBuilder.setMacroName(allStrings.getIndex(expandException.getFirst()));
-
-                StructList.Builder<PropertyMap.Entry.Builder> ioStdEntries =
-                        entryBuilder.initParameters(expandException.getSecond().size());
-                int j=0;
-                for (IOStandard ioStd : expandException.getSecond()) {
-                    PropertyMap.Entry.Builder ioStdEntry = ioStdEntries.get(j);
-                    ioStdEntry.setKey(ioStdPropIdx);
-                    ioStdEntry.setTextValue(allStrings.getIndex(ioStd.name()));
-                    j++;
-                }
-            }
-
-            // Check if this macro has a parameter propagation rule set
-            if (paramRules.containsKey(macroName)) {
-                MacroParamRule[] rules = paramRules.get(macroName);
-                StructList.Builder<ParameterMapRule.Builder> parameterMap =
-                        entryBuilder.initParamMapping(rules.length);
-                int j=0;
-                for (MacroParamRule rule : rules) {
-                    ParameterMapRule.Builder ruleBuilder = parameterMap.get(j);
-                    ruleBuilder.setPrimParam(allStrings.getIndex(rule.getPrimParam()));
-                    ruleBuilder.setInstName(allStrings.getIndex(rule.getInstName()));
-                    ruleBuilder.setInstParam(allStrings.getIndex(rule.getInstParam()));
-                    if (rule.getBitSlice() != null) {
-                        PrimitiveList.Int.Builder bitsBuilder =
-                                ruleBuilder.initBitSlice(rule.getBitSlice().length);
-                        for (int k = 0; k < rule.getBitSlice().length; k++) {
-                            bitsBuilder.set(k, rule.getBitSlice()[k]);
-                        }
-                    } else if (rule.getTableLookup() != null) {
-                        // Lookup table
-                        StructList.Builder<ParameterMapEntry.Builder> tableBuilder =
-                            ruleBuilder.initTableLookup(rule.getTableLookup().length);
-                        for (int k = 0; k < rule.getTableLookup().length; k++) {
-                            ParameterMapEntry.Builder itemBuilder = tableBuilder.get(k);
-                            MacroParamTableEntry tableEntry = rule.getTableLookup()[k];
-                            itemBuilder.setFrom(allStrings.getIndex(tableEntry.from));
-                            itemBuilder.setFrom(allStrings.getIndex(tableEntry.to));
-                        }
-                    } else {
-                        ruleBuilder.setCopyValue(Void.VOID);
-                    }
-                    j++;
-                }
-            }
-            i++;
-        }
-        */
-        t.stop().start("Cell <-> BEL pin map");
-        /*
-        EnumerateCellBelMapping.populateAllPinMappings(part, device, devBuilder, allStrings);
-
-        */
-        t.stop().start("Packages");
-        /*
-        populatePackages(allStrings, device, devBuilder);
-
-        */
-        t.stop().start("Constants");
-        /*
-        ConstantDefinitions.writeConstants(allStrings, device, devBuilder.initConstants(), design, siteTypes, tileTypesObj);
-
-        */
-        t.stop().start("Wire Types");
-        /*
-        writeWireTypes(allStrings, devBuilder);
-
-        */
-        t.stop().start("Strings");
-        /*
-        writeAllStringsToBuilder(devBuilder);
-
-        */
-        t.stop().start("Write File");
-        /*
-        Interchange.writeInterchangeFile(fileName, message);
-        */
-        t.stop();
     }
-
-/*
-    public static void writeAllStringsToBuilder(DeviceResources.Device.Builder devBuilder) {
-        int stringCount = allStrings.size();
-        TextList.Builder strList = devBuilder.initStrList(stringCount);
-        for (int i=0; i < stringCount; i++) {
-            strList.set(i, new Text.Reader(allStrings.get(i)));
-        }
-    }
-*/
 
     public static void writeAllSiteTypesToBuilder(Design design, Device device) {
         for (Entry<SiteTypeEnum,Site> e : siteTypes.entrySet()) {
@@ -992,16 +985,6 @@ public class DeviceResourcesWriterSqlite {
                 gradeObj.setSpeedGrade(allStrings.getIndex(grade.getSpeedGrade()));
                 gradeObj.setTemperatureGrade(allStrings.getIndex(grade.getTemperatureGrade()));
             }
-        }
-    }
-
-    public static void writeWireTypes(StringEnumerator allStrings, DeviceResources.Device.Builder devBuilder) {
-        StructList.Builder<DeviceResources.Device.WireType.Builder> wireTypesObj =
-                devBuilder.initWireTypes(IntentCode.values.length);
-        for (IntentCode intent : IntentCode.values) {
-            DeviceResources.Device.WireType.Builder wireType = wireTypesObj.get(intent.ordinal());
-            wireType.setName(allStrings.getIndex(intent.toString()));
-            wireType.setCategory(WireType.intentToCategory(intent));
         }
     }
 */
