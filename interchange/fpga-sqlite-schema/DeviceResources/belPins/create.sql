@@ -9,6 +9,6 @@ create table if not exists `belPins` (
     `name` TEXT NOT NULL,
     `dir` INTEGER NOT NULL,
     `bel` TEXT NOT NULL,
-    FOREIGN KEY(`siteType`) REFERENCES `siteTypeList`(`rowid`),
+    FOREIGN KEY(`siteType`) REFERENCES `enum_SiteTypeEnum`(`rowid`),
     FOREIGN KEY(`dir`) REFERENCES `enum_BELPin_Direction`(`rowid`)
 ) strict;

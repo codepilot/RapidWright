@@ -1,6 +1,8 @@
 insert into `enum_SiteTypeEnum` (
-    `toString`
+    `toString`,
+    `prefix`
 ) values (
-    ?1
+    ?1,
+    ?2
 )
 returning *;

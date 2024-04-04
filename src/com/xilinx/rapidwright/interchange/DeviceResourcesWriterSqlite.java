@@ -88,14 +88,37 @@ import com.xilinx.rapidwright.util.Pair;
 public class DeviceResourcesWriterSqlite {
     private static Connection connection;
     private static PreparedStatement ps_name_insert;
-    private static PreparedStatement ps_siteTypeList_insert;
     private static PreparedStatement ps_bels_insert;
     private static PreparedStatement ps_belCategories_insert;
     private static PreparedStatement ps_belPins_insert;
+    private static PreparedStatement ps_tileTypeWires_insert;
+    private static PreparedStatement ps_nodes_insert;
+    private static PreparedStatement ps_nodeWires_insert;
+    private static PreparedStatement ps_packages_insert;
+    private static PreparedStatement ps_packagePins_insert;
+    private static PreparedStatement ps_tiles_insert;
+    private static PreparedStatement ps_sites_insert;
+
+    private static PreparedStatement ps_enum_BELClass_insert;
+    private static PreparedStatement ps_enum_BELPin_Direction_insert;
+    private static PreparedStatement ps_enum_FamilyType_insert;
+    private static PreparedStatement ps_enum_IntentCode_insert;
+    private static PreparedStatement ps_enum_IOBankType_insert;
+    private static PreparedStatement ps_enum_IOStandard_insert;
+    private static PreparedStatement ps_enum_PIPType_insert;
+    private static PreparedStatement ps_enum_Series_insert;
+    private static PreparedStatement ps_enum_SitePIPStatus_insert;
+    private static PreparedStatement ps_enum_SiteTypeEnum_insert;
+    private static PreparedStatement ps_enum_TileTypeEnum_insert;
+    private static PreparedStatement ps_enum_WireCategory_insert;
+
     private static IdentityEnumerator<SiteTypeEnum> allSiteTypes;
 
-    private static HashMap<TileTypeEnum,Tile> tileTypes;
-    private static HashMap<SiteTypeEnum,Site> siteTypes;
+    private static Map<TileTypeEnum,Tile> tileTypes;
+    private static Map<SiteTypeEnum,Site> siteTypes;
+    private static Map<TileTypeEnum, Long> tileTypeWireMin;
+    private static Map<Long, Long> tile_to_rowid;
+    private static Map<String, Long> siteName_to_rowid;
 
     public static long rowid_insert_string(PreparedStatement ps, String str) {
         try {
@@ -126,12 +149,23 @@ public class DeviceResourcesWriterSqlite {
         }
     }
 
-    public static long insert_device_name(String name) {
-        return rowid_insert_string(ps_name_insert, name);
+    public static long rowid_insert_string_long(PreparedStatement ps, String strA, long longB) {
+        try {
+            ps.setString(1, strA);
+            ps.setLong(2, longB);
+            ResultSet rs1 = ps.executeQuery();
+            long rowid = rs1.getLong(1);
+            rs1.close();
+            return rowid;
+        }
+        catch(SQLException e) {
+          e.printStackTrace(System.err);
+          return 0;
+        }
     }
 
-    public static long insert_siteType(String name) {
-        return rowid_insert_string(ps_siteTypeList_insert, name);
+    public static long insert_device_name(String name) {
+        return rowid_insert_string(ps_name_insert, name);
     }
 
     public static long insert_bel(long rowid_siteType, BEL bel) {
@@ -176,6 +210,115 @@ public class DeviceResourcesWriterSqlite {
         catch(SQLException e) {
             e.printStackTrace(System.err);
             return 0;
+        }
+    }
+
+    public static long insert_tileTypeWire(Wire wire) {
+        try {
+            ps_tileTypeWires_insert.setString(1, wire.getWireName());
+            ps_tileTypeWires_insert.setString(2, wire.getIntentCode().toString());
+            ps_tileTypeWires_insert.setString(3, wire.getTile().getTileTypeEnum().toString());
+            ResultSet rs1 = ps_tileTypeWires_insert.executeQuery();
+            long rowid = rs1.getLong(1);
+            rs1.close();
+            return rowid;
+        }
+        catch(SQLException e) {
+          e.printStackTrace(System.err);
+          return 0;
+        }
+    }
+
+    public static long insert_nodeWire(long node_rowid, Wire wire) {
+        try {
+            Tile wireTile = wire.getTile();
+            ps_nodeWires_insert.setLong(1, node_rowid);
+            ps_nodeWires_insert.setLong(2, tile_to_rowid.get((long)wireTile.getUniqueAddress()));
+            ps_nodeWires_insert.setLong(3, tileTypeWireMin.get(wireTile.getTileTypeEnum()) + wire.getWireIndex());
+            ResultSet rs1 = ps_nodeWires_insert.executeQuery();
+            long rowid = rs1.getLong(1);
+            rs1.close();
+            return rowid;
+        }
+        catch(SQLException e) {
+          e.printStackTrace(System.err);
+          return 0;
+        }
+    }
+
+    public static long insert_node(long tile_rowid, long wire_rowid) {
+        try {
+            ps_nodes_insert.setLong(1, tile_rowid);
+            ps_nodes_insert.setLong(2, wire_rowid);
+            ResultSet rs1 = ps_nodes_insert.executeQuery();
+            long rowid = rs1.getLong(1);
+            rs1.close();
+            return rowid;
+        }
+        catch(SQLException e) {
+          e.printStackTrace(System.err);
+          return 0;
+        }
+    }
+
+    public static long insert_tile(Tile tile) {
+        try {
+            ps_tiles_insert.setString(1, tile.getName());
+            ps_tiles_insert.setString(2, tile.getTileTypeEnum().toString());
+            ps_tiles_insert.setLong(3, tile.getRow());
+            ps_tiles_insert.setLong(4, tile.getColumn());
+            ps_tiles_insert.setLong(5, tile.getTileXCoordinate());
+            ps_tiles_insert.setLong(6, tile.getTileYCoordinate());
+
+            ResultSet rs1 = ps_tiles_insert.executeQuery();
+            long rowid = rs1.getLong(1);
+            rs1.close();
+            return rowid;
+        }
+        catch(SQLException e) {
+          e.printStackTrace(System.err);
+          return 0;
+        }
+    }
+
+    public static long insert_site(Site site) {
+        try {
+            ps_sites_insert.setString(1, site.getName());
+            ps_sites_insert.setString(2, site.getSiteTypeEnum().toString());
+            ps_sites_insert.setString(3, site.getTile().getName());
+            ps_sites_insert.setLong(4, site.getInstanceX());
+            ps_sites_insert.setLong(5, site.getInstanceY());
+            ResultSet rs1 = ps_sites_insert.executeQuery();
+            long rowid = rs1.getLong(1);
+            siteName_to_rowid.put(site.getName(), rowid);
+            rs1.close();
+            return rowid;
+        }
+        catch(SQLException e) {
+          e.printStackTrace(System.err);
+          return 0;
+        }
+    }
+
+    public static long insert_package_pin(long pack_rowid, PackagePin packagePin) {
+        try {
+            ps_packagePins_insert.setString(1, packagePin.getName());
+            ps_packagePins_insert.setLong(2, pack_rowid);
+
+            Site site = packagePin.getSite();
+            if (site != null) ps_packagePins_insert.setLong(3, siteName_to_rowid.get(packagePin.getSite().getName()));
+
+            BEL bel = packagePin.getBEL();
+            if (bel != null) ps_packagePins_insert.setString(4, packagePin.getBEL().getName());
+            
+            ResultSet rs1 = ps_packagePins_insert.executeQuery();
+            long rowid = rs1.getLong(1);
+            rs1.close();
+            return rowid;
+        }
+        catch(SQLException e) {
+          e.printStackTrace(System.err);
+          return 0;
         }
     }
 
@@ -323,17 +466,30 @@ public class DeviceResourcesWriterSqlite {
 
         try {
             connection = DriverManager.getConnection("jdbc:sqlite:");
+            connection.setAutoCommit(false);
             Statement statement = connection.createStatement();
-            statement.setQueryTimeout(30);  // set timeout to 30 sec.
+            statement.setQueryTimeout(300);  // set timeout to 30 sec.
 
             statement.execute("PRAGMA main.encoding = 'UTF-8';");
             statement.execute("PRAGMA main.foreign_keys = 1;");
+            statement.execute("PRAGMA main.defer_foreign_keys = 1;");
 
             statement.execute(Files.readString(Paths.get("interchange/fpga-sqlite-schema/DeviceResources/name/create.sql")));
-            statement.execute(Files.readString(Paths.get("interchange/fpga-sqlite-schema/DeviceResources/siteTypeList/create.sql")));
             statement.execute(Files.readString(Paths.get("interchange/fpga-sqlite-schema/DeviceResources/belCategories/create.sql")));
             statement.execute(Files.readString(Paths.get("interchange/fpga-sqlite-schema/DeviceResources/bels/create.sql")));
+            statement.execute(Files.readString(Paths.get("interchange/fpga-sqlite-schema/DeviceResources/bels/view.sql")));
             statement.execute(Files.readString(Paths.get("interchange/fpga-sqlite-schema/DeviceResources/belPins/create.sql")));
+            statement.execute(Files.readString(Paths.get("interchange/fpga-sqlite-schema/DeviceResources/tiles/create.sql")));
+            statement.execute(Files.readString(Paths.get("interchange/fpga-sqlite-schema/DeviceResources/tiles/view.sql")));
+            statement.execute(Files.readString(Paths.get("interchange/fpga-sqlite-schema/DeviceResources/sites/create.sql")));
+            statement.execute(Files.readString(Paths.get("interchange/fpga-sqlite-schema/DeviceResources/sites/view.sql")));
+            statement.execute(Files.readString(Paths.get("interchange/fpga-sqlite-schema/DeviceResources/tileTypeWires/create.sql")));
+            statement.execute(Files.readString(Paths.get("interchange/fpga-sqlite-schema/DeviceResources/tileTypeWires/view.sql")));
+            statement.execute(Files.readString(Paths.get("interchange/fpga-sqlite-schema/DeviceResources/nodes/create.sql")));
+            statement.execute(Files.readString(Paths.get("interchange/fpga-sqlite-schema/DeviceResources/nodeWires/create.sql")));
+            statement.execute(Files.readString(Paths.get("interchange/fpga-sqlite-schema/DeviceResources/packages/create.sql")));
+            statement.execute(Files.readString(Paths.get("interchange/fpga-sqlite-schema/DeviceResources/packagePins/create.sql")));
+            statement.execute(Files.readString(Paths.get("interchange/fpga-sqlite-schema/DeviceResources/packagePins/view.sql")));
 
             statement.execute(Files.readString(Paths.get("interchange/fpga-sqlite-schema/DeviceResources/enum_BELClass/create.sql")));
             statement.execute(Files.readString(Paths.get("interchange/fpga-sqlite-schema/DeviceResources/enum_BELPin_Direction/create.sql")));
@@ -349,27 +505,33 @@ public class DeviceResourcesWriterSqlite {
             statement.execute(Files.readString(Paths.get("interchange/fpga-sqlite-schema/DeviceResources/enum_WireCategory/create.sql")));
 
             ps_name_insert = connection.prepareStatement(Files.readString(Paths.get("interchange/fpga-sqlite-schema/DeviceResources/name/insert.sql")));
-            ps_siteTypeList_insert = connection.prepareStatement(Files.readString(Paths.get("interchange/fpga-sqlite-schema/DeviceResources/siteTypeList/insert.sql")));
             ps_bels_insert = connection.prepareStatement(Files.readString(Paths.get("interchange/fpga-sqlite-schema/DeviceResources/bels/insert.sql")));
             ps_belCategories_insert = connection.prepareStatement(Files.readString(Paths.get("interchange/fpga-sqlite-schema/DeviceResources/belCategories/insert.sql")));
             ps_belPins_insert = connection.prepareStatement(Files.readString(Paths.get("interchange/fpga-sqlite-schema/DeviceResources/belPins/insert.sql")));
+            ps_tiles_insert = connection.prepareStatement(Files.readString(Paths.get("interchange/fpga-sqlite-schema/DeviceResources/tiles/insert.sql")));
+            ps_sites_insert = connection.prepareStatement(Files.readString(Paths.get("interchange/fpga-sqlite-schema/DeviceResources/sites/insert.sql")));
+            ps_tileTypeWires_insert = connection.prepareStatement(Files.readString(Paths.get("interchange/fpga-sqlite-schema/DeviceResources/tileTypeWires/insert.sql")));
+            ps_nodes_insert = connection.prepareStatement(Files.readString(Paths.get("interchange/fpga-sqlite-schema/DeviceResources/nodes/insert.sql")));
+            ps_nodeWires_insert = connection.prepareStatement(Files.readString(Paths.get("interchange/fpga-sqlite-schema/DeviceResources/nodeWires/insert.sql")));
+            ps_packages_insert = connection.prepareStatement(Files.readString(Paths.get("interchange/fpga-sqlite-schema/DeviceResources/packages/insert.sql")));
+            ps_packagePins_insert = connection.prepareStatement(Files.readString(Paths.get("interchange/fpga-sqlite-schema/DeviceResources/packagePins/insert.sql")));
 
             rowid_insert_string(ps_belCategories_insert, "logic");
             rowid_insert_string(ps_belCategories_insert, "routing");
             rowid_insert_string(ps_belCategories_insert, "sitePort");
 
-            PreparedStatement ps_enum_BELClass_insert = connection.prepareStatement(Files.readString(Paths.get("interchange/fpga-sqlite-schema/DeviceResources/enum_BELClass/insert.sql")));
-            PreparedStatement ps_enum_BELPin_Direction_insert = connection.prepareStatement(Files.readString(Paths.get("interchange/fpga-sqlite-schema/DeviceResources/enum_BELPin_Direction/insert.sql")));
-            PreparedStatement ps_enum_FamilyType_insert = connection.prepareStatement(Files.readString(Paths.get("interchange/fpga-sqlite-schema/DeviceResources/enum_FamilyType/insert.sql")));
-            PreparedStatement ps_enum_IntentCode_insert = connection.prepareStatement(Files.readString(Paths.get("interchange/fpga-sqlite-schema/DeviceResources/enum_IntentCode/insert.sql")));
-            PreparedStatement ps_enum_IOBankType_insert = connection.prepareStatement(Files.readString(Paths.get("interchange/fpga-sqlite-schema/DeviceResources/enum_IOBankType/insert.sql")));
-            PreparedStatement ps_enum_IOStandard_insert = connection.prepareStatement(Files.readString(Paths.get("interchange/fpga-sqlite-schema/DeviceResources/enum_IOStandard/insert.sql")));
-            PreparedStatement ps_enum_PIPType_insert = connection.prepareStatement(Files.readString(Paths.get("interchange/fpga-sqlite-schema/DeviceResources/enum_PIPType/insert.sql")));
-            PreparedStatement ps_enum_Series_insert = connection.prepareStatement(Files.readString(Paths.get("interchange/fpga-sqlite-schema/DeviceResources/enum_Series/insert.sql")));
-            PreparedStatement ps_enum_SitePIPStatus_insert = connection.prepareStatement(Files.readString(Paths.get("interchange/fpga-sqlite-schema/DeviceResources/enum_SitePIPStatus/insert.sql")));
-            PreparedStatement ps_enum_SiteTypeEnum_insert = connection.prepareStatement(Files.readString(Paths.get("interchange/fpga-sqlite-schema/DeviceResources/enum_SiteTypeEnum/insert.sql")));
-            PreparedStatement ps_enum_TileTypeEnum_insert = connection.prepareStatement(Files.readString(Paths.get("interchange/fpga-sqlite-schema/DeviceResources/enum_TileTypeEnum/insert.sql")));
-            PreparedStatement ps_enum_WireCategory_insert = connection.prepareStatement(Files.readString(Paths.get("interchange/fpga-sqlite-schema/DeviceResources/enum_WireCategory/insert.sql")));
+            ps_enum_BELClass_insert = connection.prepareStatement(Files.readString(Paths.get("interchange/fpga-sqlite-schema/DeviceResources/enum_BELClass/insert.sql")));
+            ps_enum_BELPin_Direction_insert = connection.prepareStatement(Files.readString(Paths.get("interchange/fpga-sqlite-schema/DeviceResources/enum_BELPin_Direction/insert.sql")));
+            ps_enum_FamilyType_insert = connection.prepareStatement(Files.readString(Paths.get("interchange/fpga-sqlite-schema/DeviceResources/enum_FamilyType/insert.sql")));
+            ps_enum_IntentCode_insert = connection.prepareStatement(Files.readString(Paths.get("interchange/fpga-sqlite-schema/DeviceResources/enum_IntentCode/insert.sql")));
+            ps_enum_IOBankType_insert = connection.prepareStatement(Files.readString(Paths.get("interchange/fpga-sqlite-schema/DeviceResources/enum_IOBankType/insert.sql")));
+            ps_enum_IOStandard_insert = connection.prepareStatement(Files.readString(Paths.get("interchange/fpga-sqlite-schema/DeviceResources/enum_IOStandard/insert.sql")));
+            ps_enum_PIPType_insert = connection.prepareStatement(Files.readString(Paths.get("interchange/fpga-sqlite-schema/DeviceResources/enum_PIPType/insert.sql")));
+            ps_enum_Series_insert = connection.prepareStatement(Files.readString(Paths.get("interchange/fpga-sqlite-schema/DeviceResources/enum_Series/insert.sql")));
+            ps_enum_SitePIPStatus_insert = connection.prepareStatement(Files.readString(Paths.get("interchange/fpga-sqlite-schema/DeviceResources/enum_SitePIPStatus/insert.sql")));
+            ps_enum_SiteTypeEnum_insert = connection.prepareStatement(Files.readString(Paths.get("interchange/fpga-sqlite-schema/DeviceResources/enum_SiteTypeEnum/insert.sql")));
+            ps_enum_TileTypeEnum_insert = connection.prepareStatement(Files.readString(Paths.get("interchange/fpga-sqlite-schema/DeviceResources/enum_TileTypeEnum/insert.sql")));
+            ps_enum_WireCategory_insert = connection.prepareStatement(Files.readString(Paths.get("interchange/fpga-sqlite-schema/DeviceResources/enum_WireCategory/insert.sql")));
 
             for (BELClass c : BELClass.values()) rowid_insert_string(ps_enum_BELClass_insert, c.toString());
             for (BELPin.Direction c : BELPin.Direction.values()) rowid_insert_string(ps_enum_BELPin_Direction_insert, c.toString());
@@ -379,13 +541,10 @@ public class DeviceResourcesWriterSqlite {
             for (PIPType c: PIPType.values()) rowid_insert_string(ps_enum_PIPType_insert, c.toString());
             for (Series c: Series.values()) rowid_insert_string(ps_enum_Series_insert, c.toString());
             for (SitePIPStatus c: SitePIPStatus.values()) rowid_insert_string(ps_enum_SitePIPStatus_insert, c.toString());
-            for (SiteTypeEnum c: SiteTypeEnum.values()) rowid_insert_string(ps_enum_SiteTypeEnum_insert, c.toString());
             for (TileTypeEnum c: TileTypeEnum.values()) rowid_insert_string(ps_enum_TileTypeEnum_insert, c.toString());
             for (WireCategory c: WireCategory.values()) rowid_insert_string(ps_enum_WireCategory_insert, c.toString());
             for (IntentCode c: IntentCode.values()) rowid_insert_string_string(ps_enum_IntentCode_insert, c.toString(), WireType.intentToCategory(c).toString());
 
-            connection.setAutoCommit(false);
-            statement.execute("PRAGMA main.defer_foreign_keys = 1;");
 
             populateEnumerations(design, device);
 
@@ -394,7 +553,19 @@ public class DeviceResourcesWriterSqlite {
             writeAllSiteTypesToBuilder(design, device);
     
             t.stop().start("TileTypes");
+            tile_to_rowid = new HashMap<Long, Long>();
+            siteName_to_rowid = new HashMap<String, Long>();
+            tileTypeWireMin = new HashMap<TileTypeEnum, Long>();
 
+            for (TileTypeEnum tileTypeEnum: TileTypeEnum.values()) {
+                Tile tile = device.getArbitraryTileOfType(tileTypeEnum);
+                if(tile == null) continue;
+                for (int i = 0; i < tile.getWireCount(); i++) {
+                    Wire wire = new Wire(tile, i);
+                    long wire_rowid = insert_tileTypeWire(wire);
+                    tileTypeWireMin.putIfAbsent(tileTypeEnum, wire_rowid);
+                }
+            }
             /*
             
             Map<TileTypeEnum, Integer> tileTypeIndicies = writeAllTileTypesToBuilder(design, device, devBuilder);
@@ -404,14 +575,10 @@ public class DeviceResourcesWriterSqlite {
             }
             */
             t.stop().start("Tiles");
-            /*
-            writeAllTilesToBuilder(device, devBuilder, tileTypeIndicies);
+            writeAllTilesToBuilder(device);
 
-            */
             t.stop().start("Wires&Nodes");
-            /*
-            writeAllWiresAndNodesToBuilder(device, devBuilder, skipRouteResources);
-            */
+            writeAllWiresAndNodesToBuilder(device, skipRouteResources);
 
             t.stop().start("Prims&Macros");
             /*
@@ -596,15 +763,11 @@ public class DeviceResourcesWriterSqlite {
 
             */
             t.stop().start("Packages");
-            /*
-            populatePackages(allStrings, device, devBuilder);
+            populatePackages(device);
 
-            */
             t.stop().start("Constants");
-            /*
-            ConstantDefinitions.writeConstants(allStrings, device, devBuilder.initConstants(), design, siteTypes, tileTypesObj);
+            // ConstantDefinitions.writeConstants(allStrings, device, devBuilder.initConstants(), design, siteTypes, tileTypesObj);
 
-            */
             t.stop().start("Write File");
 
             connection.commit();
@@ -625,7 +788,7 @@ public class DeviceResourcesWriterSqlite {
             Site site = e.getValue();
             SiteInst siteInst = design.createSiteInst("site_instance", e.getKey(), site);
             Tile tile = siteInst.getTile();
-            long rowid_siteType = insert_siteType(e.getKey().name());
+            // long rowid_siteType = insert_siteType(e.getKey().name());
             allSiteTypes.addObject(e.getKey());
 
             IdentityEnumerator<BELPin> allBELPins = new IdentityEnumerator<BELPin>();
@@ -633,7 +796,7 @@ public class DeviceResourcesWriterSqlite {
             // BELs
             for (int j=0; j < siteInst.getBELs().length; j++) {
                 BEL bel = siteInst.getBELs()[j];
-                insert_bel(rowid_siteType, bel);
+                // insert_bel(rowid_siteType, bel);
                 // PrimitiveList.Int.Builder belPinsBuilder = belBuilder.initPins(bel.getPins().length);
                 for (int k=0; k < bel.getPins().length; k++) {
                     BELPin belPin = bel.getPin(k);
@@ -698,7 +861,7 @@ public class DeviceResourcesWriterSqlite {
             
             // Write out BEL pins.
             for (int j=0; j < allBELPins.size(); j++) {
-                insert_belPin(rowid_siteType, allBELPins.get(j));
+                // insert_belPin(rowid_siteType, allBELPins.get(j));
             }
             /*
             SitePIP[] allSitePIPs = siteInst.getSitePIPs();
@@ -858,30 +1021,58 @@ public class DeviceResourcesWriterSqlite {
 
         return tileTypeIndicies;
     }
+    */
 
-    public static void writeAllTilesToBuilder(Device device, DeviceResources.Device.Builder devBuilder, Map<TileTypeEnum, Integer> tileTypeIndicies) {
-        Collection<Tile> tiles = device.getAllTiles();
-        StructList.Builder<DeviceResources.Device.Tile.Builder> tileBuilders =
-                devBuilder.initTileList(tiles.size());
-
-        int i=0;
-        for (Tile tile : tiles) {
-            DeviceResources.Device.Tile.Builder tileBuilder = tileBuilders.get(i);
-            tileBuilder.setName(allStrings.getIndex(tile.getName()));
-            tileBuilder.setType(tileTypeIndicies.get(tile.getTileTypeEnum()));
-            Site[] sites = tile.getSites();
-            StructList.Builder<DeviceResources.Device.Site.Builder> siteBuilders =
-                    tileBuilder.initSites(sites.length);
-            for (int j=0; j < sites.length; j++) {
-                DeviceResources.Device.Site.Builder siteBuilder = siteBuilders.get(j);
-                siteBuilder.setName(allStrings.getIndex(sites[j].getName()));
-                siteBuilder.setType(j);
+    public static void writeAllTilesToBuilder(Device device) {
+        // long nodeCounter = 0;
+        for (TileTypeEnum tileTypeEnum: TileTypeEnum.values()) {
+            Tile[][] tileGrid = device.getTilesByRootName(tileTypeEnum.name());
+            if(tileGrid == null) continue;
+            for (Tile[] tileRow : tileGrid) {
+                for (Tile tile : tileRow) {
+                    if(tile == null) continue;
+                    tile_to_rowid.putIfAbsent((long)tile.getUniqueAddress(), insert_tile(tile));
+                }
             }
-            tileBuilder.setRow((short)tile.getRow());
-            tileBuilder.setCol((short)tile.getColumn());
-            i++;
+        }
+        for (SiteTypeEnum siteTypeEnum: SiteTypeEnum.values()) {
+            boolean isFirst = true;
+            for(Site site: device.getAllSitesOfType(siteTypeEnum)) {
+                if(isFirst) rowid_insert_string_string(ps_enum_SiteTypeEnum_insert, siteTypeEnum.toString(), site.getNameSpacePrefix());
+                insert_site(site);
+                isFirst = false;
+            }
         }
 
+        for (TileTypeEnum tileTypeEnum: TileTypeEnum.values()) {
+            Tile[][] tileGrid = device.getTilesByRootName(tileTypeEnum.name());
+            if(tileGrid == null) continue;
+            for (Tile[] tileRow : tileGrid) {
+                for (Tile tile : tileRow) {
+                    if(tile == null) continue;
+                    long tile_rowid = tile_to_rowid.get((long)tile.getUniqueAddress());
+                    long wire_rowid_start = tileTypeWireMin.get(tile.getTileTypeEnum());
+                    // for (Site site: tile.getSites()) {
+                    //     insert_site(site);
+                    // }
+                    Wire baseWire = new Wire(tile, 0);
+                    for (int i = 0; i < tile.getWireCount(); i++) {
+                        baseWire.setWire(i);
+                        Node node = baseWire.getNode();
+                        if (node == null) continue;
+                        if (node.getTile() == tile && node.getWire() == i) {
+                            long node_rowid = insert_node(tile_rowid, wire_rowid_start + i);
+                            for (Wire wire: node.getAllWiresInNode()) {
+                                insert_nodeWire(node_rowid, wire);
+                            }
+                            if((node_rowid % 100000) == 0) {
+                                System.out.println(node_rowid);
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
 
     private static long makeKey(Tile tile, int wire) {
@@ -890,102 +1081,62 @@ public class DeviceResourcesWriterSqlite {
         return key;
     }
 
-    public static void writeAllWiresAndNodesToBuilder(Device device, DeviceResources.Device.Builder devBuilder,
-            boolean skipRouteResources) {
-        LongEnumerator allWires = new LongEnumerator();
-        ArrayList<Long> allNodes = new ArrayList<>();
+    public static void writeAllWiresAndNodesToBuilder(Device device, boolean skipRouteResources) {
+        // LongEnumerator allWires = new LongEnumerator();
+        // ArrayList<Long> allNodes = new ArrayList<>();
 
-        if (!skipRouteResources) {
-            for (Tile tile : device.getAllTiles()) {
-                for (int i = 0; i < tile.getWireCount(); i++) {
-                    Wire wire = new Wire(tile, i);
-                    allWires.addObject(makeKey(wire.getTile(), wire.getWireIndex()));
+        // for (int i=0; i < allWires.size(); i++) {
+        //     long wireKey = allWires.get(i);
+        //     Wire wire = new Wire(device.getTile((int)(wireKey >>> 32)), (int)(wireKey & 0xffffffff));
+        //     wireBuilder.setTile(allStrings.getIndex(wire.getTile().getName()));
+        //     wireBuilder.setWire(allStrings.getIndex(wire.getWireName()));
+        //     wireBuilder.setType(wire.getIntentCode().ordinal());
+        // }
 
-                    Node node = wire.getNode();
-                    if (node == null)
-                        continue;
-                    if (node.getTile() == tile && node.getWire() == i)
-                        allNodes.add(makeKey(node.getTile(), node.getWire()));
-                }
-            }
-        }
-
-        StructList.Builder<DeviceResources.Device.Wire.Builder> wireBuilders =
-                devBuilder.initWires(allWires.size());
-
-        for (int i=0; i < allWires.size(); i++) {
-            DeviceResources.Device.Wire.Builder wireBuilder = wireBuilders.get(i);
-            long wireKey = allWires.get(i);
-            Wire wire = new Wire(device.getTile((int)(wireKey >>> 32)), (int)(wireKey & 0xffffffff));
-            //Wire wire = allWires.get(i);
-            wireBuilder.setTile(allStrings.getIndex(wire.getTile().getName()));
-            wireBuilder.setWire(allStrings.getIndex(wire.getWireName()));
-            wireBuilder.setType(wire.getIntentCode().ordinal());
-        }
-
-        StructList.Builder<DeviceResources.Device.Node.Builder> nodeBuilders =
-                devBuilder.initNodes(allNodes.size());
-        for (int i=0; i < allNodes.size(); i++) {
-            DeviceResources.Device.Node.Builder nodeBuilder = nodeBuilders.get(i);
-            //Node node = allNodes.get(i);
-            long nodeKey = allNodes.get(i);
-            Node node = Node.getNode(device.getTile((int)(nodeKey >>> 32)), (int)(nodeKey & 0xffffffff));
-            Wire[] wires = node.getAllWiresInNode();
-            PrimitiveList.Int.Builder wBuilders = nodeBuilder.initWires(wires.length);
-            for (int k=0; k < wires.length; k++) {
-                wBuilders.set(k, allWires.getIndex(makeKey(wires[k].getTile(), wires[k].getWireIndex())));
-            }
-        }
+        // for (int i=0; i < allNodes.size(); i++) {
+        //     DeviceResources.Device.Node.Builder nodeBuilder = nodeBuilders.get(i);
+        //     long nodeKey = allNodes.get(i);
+        //     Node node = Node.getNode(device.getTile((int)(nodeKey >>> 32)), (int)(nodeKey & 0xffffffff));
+        //     Wire[] wires = node.getAllWiresInNode();
+        //     PrimitiveList.Int.Builder wBuilders = nodeBuilder.initWires(wires.length);
+        //     for (int k=0; k < wires.length; k++) {
+        //         wBuilders.set(k, allWires.getIndex(makeKey(wires[k].getTile(), wires[k].getWireIndex())));
+        //     }
+        // }
     }
 
-    private static void populatePackages(StringEnumerator allStrings, Device device, DeviceResources.Device.Builder devBuilder) {
+    private static void populatePackages(Device device) {
         Set<String> packages = device.getPackages();
         List<String> packagesList = new ArrayList<String>();
         packagesList.addAll(packages);
         packagesList.sort(new EnumerateCellBelMapping.StringCompare());
-        StructList.Builder<DeviceResources.Device.Package.Builder> packagesObj = devBuilder.initPackages(packages.size());
+
 
         for (int i = 0; i < packages.size(); ++i) {
             Package pack = device.getPackage(packagesList.get(i));
-            DeviceResources.Device.Package.Builder packageBuilder = packagesObj.get(i);
 
-            packageBuilder.setName(allStrings.getIndex(pack.getName()));
+            long pack_rowid = rowid_insert_string(ps_packages_insert, pack.getName());
 
             LinkedHashMap<String,PackagePin> packagePinMap = pack.getPackagePinMap();
             List<String> packagePins = new ArrayList<String>();
             packagePins.addAll(packagePinMap.keySet());
             packagePins.sort(new EnumerateCellBelMapping.StringCompare());
 
-            StructList.Builder<DeviceResources.Device.Package.PackagePin.Builder> packagePinsObj = packageBuilder.initPackagePins(packagePins.size());
             for (int j = 0; j < packagePins.size(); ++j) {
                 PackagePin packagePin = packagePinMap.get(packagePins.get(j));
-                DeviceResources.Device.Package.PackagePin.Builder packagePinObj = packagePinsObj.get(j);
 
-                packagePinObj.setPackagePin(allStrings.getIndex(packagePin.getName()));
-                Site site = packagePin.getSite();
-                if (site != null) {
-                    packagePinObj.initSite().setSite(allStrings.getIndex(site.getName()));
-                } else {
-                    packagePinObj.initSite().setNoSite(Void.VOID);
-                }
-
-                BEL bel = packagePin.getBEL();
-                if (bel != null) {
-                    packagePinObj.initBel().setBel(allStrings.getIndex(bel.getName()));
-                } else {
-                    packagePinObj.initBel().setNoBel(Void.VOID);
-                }
+                // packagePinObj.setPackagePin(allStrings.getIndex(packagePin.getName()));
+                insert_package_pin(pack_rowid, packagePin);
             }
 
-            StructList.Builder<DeviceResources.Device.Package.Grade.Builder> grades = packageBuilder.initGrades(pack.getGrades().length);
             for (int j = 0; j < pack.getGrades().length; ++j) {
                 Grade grade = pack.getGrades()[j];
-                DeviceResources.Device.Package.Grade.Builder gradeObj = grades.get(j);
-                gradeObj.setName(allStrings.getIndex(grade.getName()));
-                gradeObj.setSpeedGrade(allStrings.getIndex(grade.getSpeedGrade()));
-                gradeObj.setTemperatureGrade(allStrings.getIndex(grade.getTemperatureGrade()));
+
+                // gradeObj.setName(allStrings.getIndex(grade.getName()));
+                // gradeObj.setSpeedGrade(allStrings.getIndex(grade.getSpeedGrade()));
+                // gradeObj.setTemperatureGrade(allStrings.getIndex(grade.getTemperatureGrade()));
             }
         }
     }
-*/
+
 }
