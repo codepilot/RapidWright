@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023, Advanced Micro Devices, Inc.
+ * Copyright (c) 2024, Advanced Micro Devices, Inc.
  * All rights reserved.
  *
  * Author: Chris Lavin, Advanced Micro Devices, Inc.
@@ -33,12 +33,32 @@ import com.xilinx.rapidwright.edif.EDIFCellInst;
 import com.xilinx.rapidwright.edif.EDIFLibrary;
 
 /**
- * Generated on: Fri Oct 20 23:25:44 2023
+ * Generated on: Thu Nov 21 13:34:09 MST 2024
  * by: com.xilinx.rapidwright.release.UnisimParser
  *
  * Enumerates supported Unisim primitives that map to Xilinx devices.
  */
 public enum Unisim {
+    AIE2PS_NOC_M_AXI,
+    AIE2PS_NOC_M_AXIS,
+    AIE2PS_NOC_S_AXI,
+    AIE2PS_NOC_S_AXIS,
+    AIE2PS_PL_M_AXIS128,
+    AIE2PS_PL_M_AXIS32,
+    AIE2PS_PL_M_AXIS64,
+    AIE2PS_PL_M_EVENTS,
+    AIE2PS_PL_S_AXIS128,
+    AIE2PS_PL_S_AXIS32,
+    AIE2PS_PL_S_AXIS64,
+    AIE2PS_PL_S_EVENTS,
+    AIE2P_PL_M_AXIS128,
+    AIE2P_PL_M_AXIS32,
+    AIE2P_PL_M_AXIS64,
+    AIE2P_PL_M_EVENTS,
+    AIE2P_PL_S_AXIS128,
+    AIE2P_PL_S_AXIS32,
+    AIE2P_PL_S_AXIS64,
+    AIE2P_PL_S_EVENTS,
     AIE_ML_NOC_M_AXI,
     AIE_ML_NOC_M_AXIS,
     AIE_ML_NOC_S_AXI,
@@ -85,6 +105,8 @@ public enum Unisim {
     AND5B4,
     AND5B5,
     AUTOBUF,
+    AXI32,
+    BFR_FT,
     BFR_MATMULX,
     BIBUF,
     BITSLICE_CONTROL,
@@ -157,8 +179,10 @@ public enum Unisim {
     DDRMC,
     DDRMC5,
     DDRMC5C,
+    DDRMC5E,
     DDRMC_RIU,
     DFE_CFR,
+    DFE_CHANNELIZER,
     DFE_DUC_DDC,
     DFE_FFT,
     DFE_FIR,
@@ -258,6 +282,7 @@ public enum Unisim {
     FRAME_ECCE3,
     FRAME_ECCE4,
     FRAME_ECC_VIRTEX6,
+    FUSE_CLK,
     GND,
     GTF_CHANNEL,
     GTF_COMMON,
@@ -653,6 +678,7 @@ public enum Unisim {
     ISERDESE2,
     ISERDESE3,
     ISERDES_NODELAY,
+    ISP2,
     JTAG_SIME2,
     KEEPER,
     KEY_CLEAR,
@@ -724,6 +750,7 @@ public enum Unisim {
     MMCME5,
     MMCM_ADV,
     MMCM_BASE,
+    MMI,
     MRMAC,
     MULT18X18,
     MULT18X18S,
@@ -767,6 +794,7 @@ public enum Unisim {
     NOC2_NMU256,
     NOC2_NMU512,
     NOC2_NPS5555,
+    NOC2_NPS6X,
     NOC2_NPS7575,
     NOC2_NSU128,
     NOC2_NSU256,
@@ -1191,6 +1219,7 @@ public enum Unisim {
     PLLE4_BASE,
     PLL_ADV,
     PLL_BASE,
+    PS11,
     PS7,
     PS8,
     PS9,
@@ -1288,8 +1317,11 @@ public enum Unisim {
     RAMS64E1,
     RAMS64E5,
     RFADC,
+    RFADCE5,
     RFADC_13B4W_M0,
+    RFADC_13B4W_M1,
     RFDAC,
+    RFDACE5,
     RIU_OR,
     ROM128X1,
     ROM16X1,
@@ -1298,8 +1330,10 @@ public enum Unisim {
     ROM64X1,
     RXTX_BITSLICE,
     RX_BITSLICE,
+    SDFEC_LD,
     SIM_CONFIGE2,
     SIM_CONFIGE3,
+    SIM_CONFIGE4,
     SRL16,
     SRL16E,
     SRL16E_1,
@@ -1334,6 +1368,7 @@ public enum Unisim {
     USR_ACCESS_VIRTEX6,
     VCC,
     VCU,
+    VCU2,
     VDU,
     X5PHIO_CMUIF,
     X5PHIO_CMU_X32,

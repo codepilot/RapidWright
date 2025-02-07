@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2021-2022, Xilinx, Inc.
- * Copyright (c) 2022-2023, Advanced Micro Devices, Inc.
+ * Copyright (c) 2022-2024, Advanced Micro Devices, Inc.
  * All rights reserved.
  *
  * Author: Jakob Wenzel, Xilinx Research Labs.
@@ -38,6 +38,7 @@ import com.xilinx.rapidwright.design.blocks.PBlock;
 import com.xilinx.rapidwright.design.blocks.PBlockGenerator;
 import com.xilinx.rapidwright.design.merge.MergeDesigns;
 import com.xilinx.rapidwright.design.tools.LUTTools;
+import com.xilinx.rapidwright.design.tools.RelocationTools;
 import com.xilinx.rapidwright.device.IntentCode;
 import com.xilinx.rapidwright.device.PseudoPIPHelper;
 import com.xilinx.rapidwright.device.browser.DeviceBrowser;
@@ -75,6 +76,7 @@ import com.xilinx.rapidwright.interchange.GenerateInterchangeDevices;
 import com.xilinx.rapidwright.interchange.GenerateSqliteDevices;
 import com.xilinx.rapidwright.interchange.Interchange;
 import com.xilinx.rapidwright.interchange.LogicalNetlistExample;
+import com.xilinx.rapidwright.interchange.LogicalNetlistToEdif;
 import com.xilinx.rapidwright.interchange.PhysicalNetlistExample;
 import com.xilinx.rapidwright.interchange.PhysicalNetlistToDcp;
 import com.xilinx.rapidwright.ipi.BlockCreator;
@@ -85,6 +87,8 @@ import com.xilinx.rapidwright.placer.handplacer.HandPlacer;
 import com.xilinx.rapidwright.placer.handplacer.ModuleOptimizer;
 import com.xilinx.rapidwright.router.RouteThruHelper;
 import com.xilinx.rapidwright.router.Router;
+import com.xilinx.rapidwright.rwroute.CUFR;
+import com.xilinx.rapidwright.rwroute.PartialCUFR;
 import com.xilinx.rapidwright.rwroute.PartialRouter;
 import com.xilinx.rapidwright.rwroute.RWRoute;
 import com.xilinx.rapidwright.tests.CheckAccuracyUsingGnlDesigns;
@@ -101,6 +105,7 @@ import com.xilinx.rapidwright.util.MakeBlackBox;
 import com.xilinx.rapidwright.util.PartPrinter;
 import com.xilinx.rapidwright.util.PerformanceExplorer;
 import com.xilinx.rapidwright.util.ReplaceEDIFInDCP;
+import com.xilinx.rapidwright.util.ReportRouteStatus;
 import com.xilinx.rapidwright.util.StringTools;
 import com.xilinx.rapidwright.util.Unzip;
 import com.xilinx.rapidwright.util.performance_evaluation.PerformanceEvaluation;
@@ -127,6 +132,7 @@ public class MainEntrypoint {
         addFunction("CheckAccuracyUsingGnlDesigns", CheckAccuracyUsingGnlDesigns::main);
         addFunction("CompareRouteStatusReports", CompareRouteStatusReports::main);
         addFunction("CopyMMCMCell", CopyMMCMCell::main);
+        addFunction("CUFR", CUFR::main);
         addFunction("CustomRouting", CustomRouting::main);
         addFunction("DcpToInterchange", DcpToInterchange::main);
         addFunction("DecomposeLUT", DecomposeLUT::main);
@@ -156,6 +162,7 @@ public class MainEntrypoint {
         addFunction("JobQueue", JobQueue::main);
         addFunction("Lesson1", Lesson1::main);
         addFunction("LogicalNetlistExample", LogicalNetlistExample::main);
+        addFunction("LogicalNetlistToEdif", LogicalNetlistToEdif::main);
         addFunction("LUTTools", LUTTools::main);
         addFunction("MakeBlackBox", MakeBlackBox::main);
         addFunction("MergeDesigns", MergeDesigns::main);
@@ -164,6 +171,7 @@ public class MainEntrypoint {
         addFunction("MultGenerator", MultGenerator::main);
         addFunction("PartPrinter", PartPrinter::main);
         addFunction("PartTileBrowser", PartTileBrowser::main);
+        addFunction("PartialCUFR", PartialCUFR::main);
         addFunction("PartialRouter", PartialRouter::main);
         addFunction("PBlockGenDebugger", PBlockGenDebugger::main);
         addFunction("PBlockGenerator", PBlockGenerator::main);
@@ -180,8 +188,10 @@ public class MainEntrypoint {
         addFunction("PrintEDIFInstances", PrintEDIFInstances::main);
         addFunction("ProbeRouter", ProbeRouter::main);
         addFunction("PseudoPIPHelper", PseudoPIPHelper::main);
+        addFunction("RelocationTools", RelocationTools::main);
         addFunction("ReplaceEDIFInDCP", ReplaceEDIFInDCP::main);
         addFunction("ReportDevicePerformance", ReportDevicePerformance::main);
+        addFunction("ReportRouteStatus", ReportRouteStatus::main);
         addFunction("ReportTimingExample", ReportTimingExample::main);
         addFunction("Router", Router::main);
         addFunction("RouteThruHelper", RouteThruHelper::main);

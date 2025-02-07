@@ -353,7 +353,8 @@ public class LUTTools {
             boolean result = b.eval(i);
             if (result) init = setBit(init,i);
         }
-        return length + "'h" + Long.toUnsignedString(init, 16).toUpperCase();
+        int initLength = Integer.max(1, length >>> 2);
+        return length + "'h" + String.format("%0" + initLength + "x", init).toUpperCase();
     }
 
     /**
@@ -389,9 +390,9 @@ public class LUTTools {
      */
     public static String getLUTEquation(Cell c) {
         if (c.isRoutethru()) {
-            Set<Entry<String, String>> entrySet = c.getPinMappingsP2L().entrySet();
-            assert (entrySet.size() == 1);
-            return "O" + c.getBELName().charAt(1) + "=" + entrySet.iterator().next().getKey();
+            BELPin rtEntry = c.getFirstPhysicalPinMapping().getFirst();
+            assert (c.getUsedPhysicalPinsCount() == 1);
+            return "O" + c.getBELName().charAt(1) + "=" + rtEntry.getName();
         }
         return getLUTEquation(c.getEDIFCellInst());
     }
@@ -594,7 +595,7 @@ public class LUTTools {
             String oldPhysicalPin = oPins[i];
             String newPhysicalPin = ePins[i];
             Cell c = emptySlots.get(newPhysicalPin).getCell();
-            String newNetPinName = c.getSiteWireNameFromPhysicalPin(newPhysicalPin);
+            String newNetPinName = c.getBELName().substring(0, 1) + newPhysicalPin.charAt(1);
             // Handles special cases
             if (c.getLogicalPinMapping(oldPhysicalPin) == null) {
                 Cell neighborLUT = emptySlots.get(newPhysicalPin).checkForCompanionCell();
@@ -635,13 +636,14 @@ public class LUTTools {
         Queue<SitePinInst> q = new LinkedList<>();
         for (PinSwap ps : copyOnWritePinSwaps) {
             Cell cell = ps.getCell();
-            String oldSitePinName = cell.getSiteWireNameFromPhysicalPin(ps.getOldPhysicalName());
+            String oldSitePinName = cell.getBELName().substring(0, 1) + ps.getOldPhysicalName().charAt(1);
             SiteInst si = cell.getSiteInst();
             SitePinInst pinToMove = si.getSitePinInst(oldSitePinName);
             q.add(pinToMove);
             if (pinToMove == null) {
                 continue;
             }
+            si.unrouteIntraSiteNet(pinToMove.getBELPin(), cell.getBEL().getPin(ps.getOldPhysicalName()));
             pinToMove.setSiteInst(null,true);
             // Removes pin mappings to prepare for new pin mappings
             cell.removePinMapping(ps.getOldPhysicalName());
@@ -671,7 +673,9 @@ public class LUTTools {
                 continue;
             }
             pinToMove.setPinName(ps.getNewNetPinName());
-            pinToMove.setSiteInst(cell.getSiteInst());
+            SiteInst si = cell.getSiteInst();
+            pinToMove.setSiteInst(si);
+            si.routeIntraSiteNet(pinToMove.getNet(), pinToMove.getBELPin(), cell.getBEL().getPin(ps.getNewPhysicalName()));
         }
 
         assert(q.isEmpty());

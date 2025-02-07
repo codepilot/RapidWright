@@ -1,7 +1,7 @@
 /*
  *
  * Copyright (c) 2021 Ghent University.
- * Copyright (c) 2022-2023, Advanced Micro Devices, Inc.
+ * Copyright (c) 2022-2024, Advanced Micro Devices, Inc.
  * All rights reserved.
  *
  * Author: Yun Zhou, Ghent University.
@@ -32,8 +32,10 @@ import com.xilinx.rapidwright.device.IntentCode;
 import com.xilinx.rapidwright.design.Net;
 import com.xilinx.rapidwright.design.SitePinInst;
 import com.xilinx.rapidwright.device.Node;
+import com.xilinx.rapidwright.device.Series;
 import com.xilinx.rapidwright.timing.TimingEdge;
 import com.xilinx.rapidwright.timing.delayestimator.DelayEstimatorBase;
+import com.xilinx.rapidwright.util.Pair;
 
 /**
  * A Connection instance represents a pair of source-sink {@link SitePinInst} instances of a {@link Net} instance.
@@ -49,7 +51,6 @@ public class Connection implements Comparable<Connection>{
      * They are created based on the INT tile nodes the source and sink SitePinInsts connect to, respectively.
      */
     private RouteNode sourceRnode;
-    private RouteNode altSourceRnode;
     private RouteNode sinkRnode;
     private List<RouteNode> altSinkRnodes;
     /**
@@ -83,7 +84,7 @@ public class Connection implements Comparable<Connection>{
     /** To indicate if the route delay of a connection has been patched up, when there are consecutive long nodes */
     private boolean dlyPatched;
     /** true to indicate that a connection cross SLRs */
-    private boolean crossSLR;
+    private final boolean crossSLR;
     /** List of nodes assigned to a connection to form the path for generating PIPs */
     private List<Node> nodes;
 
@@ -96,6 +97,9 @@ public class Connection implements Comparable<Connection>{
         this.netWrapper = netWrapper;
         netWrapper.addConnection(this);
         crossSLR = !source.getTile().getSLR().equals(sink.getTile().getSLR());
+        if (crossSLR && source.getSiteInst().getDesign().getSeries() == Series.Versal) {
+            throw new RuntimeException("ERROR: Cross-SLR connections not yet supported on Versal.");
+        }
     }
 
     /**
@@ -212,19 +216,6 @@ public class Connection implements Comparable<Connection>{
     }
 
     /**
-     * Checks if a connection is routed through any rnodes that have multiple drivers.
-     * @return
-     */
-    public boolean useRnodesWithMultiDrivers() {
-        for (RouteNode rn : getRnodes()) {
-            if (rn.hasMultiDrivers()) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    /**
      * Add the give RouteNode to the list of those used by this Connection.
      * Expand the bounding box accordingly, since this node could describe an
      * existing routing path computed using a different bounding box.
@@ -273,7 +264,6 @@ public class Connection implements Comparable<Connection>{
 
     public void resetRoute() {
         getRnodes().clear();
-        sink.setRouted(false);
     }
 
     public RouteNode getSourceRnode() {
@@ -282,14 +272,6 @@ public class Connection implements Comparable<Connection>{
 
     public void setSourceRnode(RouteNode sourceNode) {
         sourceRnode = sourceNode;
-    }
-
-    public RouteNode getAltSourceRnode() {
-        return altSourceRnode;
-    }
-
-    public void setAltSourceRnode(RouteNode altSourceNode) {
-        altSourceRnode = altSourceNode;
     }
 
     public RouteNode getSinkRnode() {
@@ -304,15 +286,19 @@ public class Connection implements Comparable<Connection>{
         return altSinkRnodes == null ? Collections.emptyList() : altSinkRnodes;
     }
 
+    public boolean hasAltSinks() {
+        return altSinkRnodes != null && !altSinkRnodes.isEmpty();
+    }
+
     public void addAltSinkRnode(RouteNode sinkRnode) {
         if (altSinkRnodes == null) {
             altSinkRnodes = new ArrayList<>(1);
         } else {
             assert(!altSinkRnodes.contains(sinkRnode));
         }
-        assert(sinkRnode.getType() == RouteNodeType.PINFEED_I ||
+        assert(sinkRnode.getType().isAnyExclusiveSink() ||
                // Can be a WIRE if node is not exclusive a sink
-               sinkRnode.getType() == RouteNodeType.WIRE);
+               sinkRnode.getType() == RouteNodeType.NON_LOCAL);
         altSinkRnodes.add(sinkRnode);
     }
 
@@ -356,11 +342,16 @@ public class Connection implements Comparable<Connection>{
         return this.netWrapper;
     }
 
+    public Net getNet() {
+        return netWrapper.getNet();
+    }
+
     public SitePinInst getSource() {
         return source;
     }
 
     public void setSource(SitePinInst source) {
+        assert(source != null);
         this.source = source;
     }
 
@@ -413,7 +404,7 @@ public class Connection implements Comparable<Connection>{
     }
 
     public List<Node> getNodes() {
-        return nodes;
+        return nodes == null ? Collections.emptyList() : nodes;
     }
 
     public void setNodes(List<Node> nodes) {
@@ -435,23 +426,14 @@ public class Connection implements Comparable<Connection>{
     }
 
     @Override
-    public int compareTo(Connection arg0) {
-        if (this == arg0)
-            return 0;
-        if (netWrapper.getConnections().size() > arg0.getNetWrapper().getConnections().size()) {
-            return 1;
-        } else if (netWrapper.getConnections().size() == arg0.getNetWrapper().getConnections().size()) {
-            if (this.getHpwl() > arg0.getHpwl()) {
-                return 1;
-            } else if (getHpwl() == arg0.getHpwl()) {
-                if (hashCode() > arg0.hashCode()) {
-                    return -1;
-                }
-            }
-        } else {
-            return -1;
+    public int compareTo(Connection that) {
+        // 1st priority: descending net fanout
+        int comp = Integer.compare(that.getNetWrapper().getConnections().size(), this.getNetWrapper().getConnections().size());
+        if (comp != 0) {
+            return comp;
         }
-        return -1;
+        // 2nd priority: ascending HPWL
+        return Short.compare(this.getHpwl(), that.getHpwl());
     }
 
     public String bbRectangleString() {
@@ -481,15 +463,15 @@ public class Connection implements Comparable<Connection>{
         return s.toString();
     }
 
-    public void setAllTargets(boolean target) {
-        if (sinkRnode.countConnectionsOfUser(netWrapper) == 0 ||
+    public void setAllTargets(RWRoute.ConnectionState state) {
+        if (sinkRnode.countConnectionsOfUser(netWrapper) == 1 ||
             sinkRnode.getIntentCode() == IntentCode.NODE_PINBOUNCE) {
             // Since this connection will have been ripped up, only mark a node
             // as a target if it's not already used by this net.
             // This prevents -- for the case where the same net needs to be routed
             // to the same LUT more than once -- the illegal case of the same
             // physical pin servicing more than one logical pin
-            sinkRnode.setTarget(target);
+            sinkRnode.markTarget(state);
         } else {
             assert(altSinkRnodes != null && !altSinkRnodes.isEmpty());
         }
@@ -499,12 +481,41 @@ public class Connection implements Comparable<Connection>{
                 // if it's not already in use by the current net to prevent the case
                 // where the same physical pin services more than one logical pin
                 if (rnode.countConnectionsOfUser(netWrapper) == 0 ||
-                    // Except if it is not a PINFEED_I
-                    rnode.getType() != RouteNodeType.PINFEED_I) {
+                    // Except if it is not an EXCLUSIVE_SINK
+                    !rnode.getType().isAnyExclusiveSink()) {
                     assert(rnode.getIntentCode() != IntentCode.NODE_PINBOUNCE);
-                    rnode.setTarget(target);
+                    rnode.markTarget(state);
                 }
             }
         }
+    }
+
+    protected Pair<SitePinInst,RouteNode> getOrCreateAlternateSource(RouteNodeGraph routingGraph) {
+        SitePinInst altSource = netWrapper.getOrCreateAlternateSource(routingGraph);
+        if (altSource == null) {
+            return null;
+        }
+
+        Net net = netWrapper.getNet();
+        RouteNode altSourceRnode;
+        if (source.equals(net.getSource())) {
+            altSourceRnode = netWrapper.getAltSourceRnode();
+        } else {
+            assert(source.equals(net.getAlternateSource()));
+            altSource = net.getSource();
+            assert(altSource != null);
+            altSourceRnode = netWrapper.getSourceRnode();
+        }
+
+        assert(altSourceRnode != null);
+        return new Pair<>(altSource, altSourceRnode);
+    }
+
+    public boolean isRouted() {
+        return sink.isRouted();
+    }
+
+    public void setRouted(boolean isRouted) {
+        sink.setRouted(isRouted);
     }
 }

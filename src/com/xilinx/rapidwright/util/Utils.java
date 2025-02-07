@@ -1,7 +1,7 @@
 /*
  * Original work: Copyright (c) 2010-2011 Brigham Young University
  * Modified work: Copyright (c) 2017-2022, Xilinx, Inc.
- * Copyright (c) 2022-2023, Advanced Micro Devices, Inc.
+ * Copyright (c) 2022-2024, Advanced Micro Devices, Inc.
  * All rights reserved.
  *
  * Author: Chris Lavin, Xilinx Research Labs.
@@ -54,6 +54,8 @@ public class Utils{
     private static Set<TileTypeEnum> urams;
 
     private static Set<TileTypeEnum> lagunas;
+
+    private static Set<TileTypeEnum> clocking;
 
     private static Set<SiteTypeEnum> lockedSiteTypes;
 
@@ -168,6 +170,10 @@ public class Utils{
         return lagunas.contains(type);
     }
 
+    public static boolean isClocking(TileTypeEnum type) {
+        return clocking.contains(type);
+    }
+
     public static boolean isLockedSiteType(SiteTypeEnum type) {
         return lockedSiteTypes.contains(type);
     }
@@ -202,6 +208,10 @@ public class Utils{
 
     public static Set<TileTypeEnum> getLagunaTileTypes() {
         return lagunas;
+    }
+
+    public static Set<TileTypeEnum> getClockingTileTypes() {
+        return clocking;
     }
 
     public static Set<SiteTypeEnum> getLockedSiteTypes() {
@@ -338,6 +348,15 @@ public class Utils{
                 TileTypeEnum.LAGUNA_TILE    // UltraScale
         );
 
+        clocking = EnumSet.of(
+                TileTypeEnum.RCLK_CLEM_CLKBUF_L,
+                TileTypeEnum.CMT_L,
+                // Versal
+                TileTypeEnum.CLK_REBUF_BUFGS_HSR_CORE,
+                TileTypeEnum.CLK_PLL_AND_PHY,
+                TileTypeEnum.CMT_MMCM
+        );
+
         lockedSiteTypes = EnumSet.of(
             SiteTypeEnum.CONFIG_SITE,
             SiteTypeEnum.BUFG
@@ -384,6 +403,9 @@ public class Utils{
             SiteTypeEnum.IOB,
             SiteTypeEnum.IOBM,
             SiteTypeEnum.IOBS,
+            SiteTypeEnum.HDIOB,
+            SiteTypeEnum.HDIOB_M,
+            SiteTypeEnum.HDIOB_S,
             SiteTypeEnum.HPIOB,
             SiteTypeEnum.HPIOB_M,
             SiteTypeEnum.HPIOB_S,
@@ -394,7 +416,8 @@ public class Utils{
             SiteTypeEnum.HPIOBDIFFOUTBUF,
             SiteTypeEnum.HRIO,
             SiteTypeEnum.HRIODIFFINBUF,
-            SiteTypeEnum.HRIODIFFOUTBUF
+            SiteTypeEnum.HRIODIFFOUTBUF,
+            SiteTypeEnum.XPIOB
         );
 
         uramTypes = EnumSet.of(

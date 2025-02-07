@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2021-2022, Xilinx, Inc.
- * Copyright (c) 2022-2023, Advanced Micro Devices, Inc.
+ * Copyright (c) 2022-2024, Advanced Micro Devices, Inc.
  * All rights reserved.
  *
  * Author: Jakob Wenzel, Xilinx Research Labs.
@@ -39,6 +39,9 @@ import org.junit.jupiter.params.provider.ValueSource;
 
 import com.xilinx.rapidwright.device.BEL;
 import com.xilinx.rapidwright.device.Device;
+import com.xilinx.rapidwright.device.PIP;
+import com.xilinx.rapidwright.device.Part;
+import com.xilinx.rapidwright.device.PartNameTools;
 import com.xilinx.rapidwright.device.Series;
 import com.xilinx.rapidwright.device.Site;
 import com.xilinx.rapidwright.device.SitePIP;
@@ -59,6 +62,7 @@ import com.xilinx.rapidwright.util.Job;
 import com.xilinx.rapidwright.util.JobQueue;
 import com.xilinx.rapidwright.util.LocalJob;
 import com.xilinx.rapidwright.util.ParallelismTools;
+import com.xilinx.rapidwright.util.VivadoToolsHelper;
 
 /**
  * Test that we can write a DCP file and read it back in. We currently don't have a way to check designs for equality,
@@ -344,7 +348,7 @@ public class TestDesign {
         Assertions.assertTrue(si.routeIntraSiteNet(oldNet, si.getBELPin("A1", "A1"),
                 si.getBELPin(unisim.toString(), "DI0")));
         Assertions.assertEquals("[IN SLICE_X32Y73.A1, OUT SLICE_X32Y73.HQ]", oldNet.getPins().toString());
-        Assertions.assertEquals("[A1, HQ, A5LUT_O5]", si.getSiteWiresFromNet(oldNet).toString());
+        Assertions.assertEquals("[A1, A5LUT_O5, HQ]", si.getSiteWiresFromNet(oldNet).toString());
 
         Net newNet = d.createNet("newNet");
         SitePinInst h6 = newNet.createPin("H6", si);
@@ -358,7 +362,7 @@ public class TestDesign {
         Assertions.assertNull(d.getNet(oldNet.getName()));
         Assertions.assertSame(newNet, d.getNet(newNet.getName()));
         Assertions.assertEquals("[IN SLICE_X32Y73.H6, IN SLICE_X32Y73.A1, OUT SLICE_X32Y73.HQ]", newNet.getPins().toString());
-        Assertions.assertEquals("[H6, A1, HQ, A5LUT_O5]", si.getSiteWiresFromNet(newNet).toString());
+        Assertions.assertEquals("[A1, A5LUT_O5, H6, HQ]", si.getSiteWiresFromNet(newNet).toString());
         Assertions.assertEquals("[INT_X21Y73/INT.VCC_WIRE->>IMUX_E47]", newNet.getPIPs().toString());
     }
 
@@ -385,7 +389,7 @@ public class TestDesign {
         Assertions.assertNull(d.getNet(oldNet.getName()));
         Assertions.assertSame(newNet, d.getNet(newNet.getName()));
         Assertions.assertEquals("[IN SLICE_X32Y73.H6]", newNet.getPins().toString());
-        Assertions.assertEquals("[H6, B_O, FFMUXB1_OUT1]", si.getSiteWiresFromNet(newNet).toString());
+        Assertions.assertEquals("[B_O, FFMUXB1_OUT1, H6]", si.getSiteWiresFromNet(newNet).toString());
         Assertions.assertTrue(newNet.getPIPs().isEmpty());
     }
 
@@ -439,5 +443,108 @@ public class TestDesign {
         Net dout = design.getDevice().getSeries().equals(Series.UltraScalePlus) ? net
                 : design.getNet(ibufInst.getName() + "/O");
         Assertions.assertEquals(siteInst.getNetFromSiteWire("DOUT"), dout);
+    }
+
+    private void ensureDesignInSLR(Design d, int expectedSLR) {
+        for (SiteInst si : d.getSiteInsts()) {
+            Assertions.assertEquals(expectedSLR, si.getTile().getSLR().getId());
+        }
+        for (Net n : d.getNets()) {
+            for (PIP p : n.getPIPs()) {
+                Assertions.assertEquals(expectedSLR, p.getTile().getSLR().getId());
+            }
+        }
+    }
+
+    /**
+     * Tests relocating and retargeting a Picoblaze design from a vu3p to each of
+     * the three SLRs in a vu9p since all of the SLRs between the devices are
+     * relocation compatible.
+     * 
+     * @param tempDir Temp directory to write out results.
+     */
+    @Test
+    public void testRetargetPart(@TempDir Path tempDir) {
+        String targetPartName = "xcvu9p-flgb2104-2-i";
+        Part targetPart = PartNameTools.getPart(targetPartName);
+        Device targetDevice = Device.getDevice(targetPart);
+        for (int slr = 0; slr < targetDevice.getNumOfSLRs(); slr++) {
+            Design d = RapidWrightDCP.loadDCP("picoblaze_ooc_X10Y235.dcp");
+            Part origPart = d.getPart();
+            assert (d.getDevice().getName().equals("xcvu3p"));
+            int tileDX = 0;
+            int tileDY = slr * targetDevice.getMasterSLR().getNumOfClockRegionRows()
+                    * targetPart.getSeries().getCLEHeight();
+            Assertions.assertTrue(d.retargetPart(targetPart, tileDX, tileDY));
+            Path output = tempDir.resolve("retarget_" + slr + ".dcp");
+
+            Assertions.assertEquals(targetPartName, d.getPartName());
+            ensureDesignInSLR(d, slr);
+
+            d.writeCheckpoint(output);
+
+            Design d2 = Design.readCheckpoint(output);
+
+            Assertions.assertEquals(targetPartName, d2.getPartName());
+            ensureDesignInSLR(d2, slr);
+
+            // Try reversing the process to see if we get the original
+            d2.retargetPart(origPart, tileDX * -1, tileDY * -1);
+            assert (d2.getDevice().getName().equals(origPart.getDevice()));
+            ensureDesignInSLR(d2, 0);
+
+            // Just do a single sanity check that it opens ok in Vivado
+            if (slr == 1 && FileTools.isVivadoOnPath()) {
+                VivadoToolsHelper.assertFullyRouted(output);
+            }
+        }
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {
+            "picoblaze_ooc_X10Y235.dcp",            // Pre 2022.1 DCP
+            "picoblaze_ooc_X10Y235_2022_1.dcp",     // 2022.1 DCP
+    })
+    public void testNetOrder(String dcpFileName) {
+        Design design1 = RapidWrightDCP.loadDCP(dcpFileName);
+        Object[] nets1 = design1.getNets().toArray();
+
+        for (int i = 0; i < 10; i++) {
+            Design design2 = RapidWrightDCP.loadDCP(dcpFileName);
+            Object[] nets2 = design2.getNets().toArray();
+            Assertions.assertTrue(Arrays.equals(nets1, nets2));
+        }
+    }
+
+    @Test
+    public void testPlaceCellPinMappings() {
+        final EDIFNetlist netlist = TestEDIF.createEmptyNetlist();
+        final Design design = new Design(netlist);
+
+        final Cell myCell = design.createCell("myCell", Unisim.FDRE);
+        Assertions.assertTrue(myCell.getPinMappingsL2P().isEmpty());
+
+        final Site site = design.getDevice().getSite(SITE);
+        design.createSiteInst(site);
+        BEL bel = site.getBEL("AFF");
+        Assertions.assertNotNull(bel);
+        design.placeCell(myCell, site, bel);
+
+        // Check that L2P and P2L are consistent
+        for (String logPin : new String[]{"CE", "C", "D", "R", "Q"}) {
+            String physPin = myCell.getPhysicalPinMapping(logPin);
+            Assertions.assertEquals(logPin, myCell.getLogicalPinMapping(physPin));
+        }
+
+        // Move the Cell to another BEL
+        myCell.unplace();
+        bel = site.getBEL("BFF");
+        design.placeCell(myCell, site, bel);
+
+        // Check that L2P and P2L remain consistent
+        for (String logPin : new String[]{"CE", "C", "D", "R", "Q"}) {
+            String physPin = myCell.getPhysicalPinMapping(logPin);
+            Assertions.assertEquals(logPin, myCell.getLogicalPinMapping(physPin));
+        }
     }
 }

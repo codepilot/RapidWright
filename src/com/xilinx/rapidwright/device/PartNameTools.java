@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023, Advanced Micro Devices, Inc.
+ * Copyright (c) 2024, Advanced Micro Devices, Inc.
  * All rights reserved.
  *
  * Author: Chris Lavin, Advanced Micro Devices, Inc.
@@ -36,7 +36,7 @@ import com.xilinx.rapidwright.device.Series;
 import com.xilinx.rapidwright.util.FileTools;
 
 /**
- * Generated on: Fri Oct 20 21:29:57 2023
+ * Generated on: Thu Nov 21 13:06:39 MST 2024
  * by: com.xilinx.rapidwright.release.PartNamePopulator
  *
  * Class to hold utility APIs dealing with Parts and device names.
@@ -132,6 +132,7 @@ public class PartNameTools {
             case ARTIX7L: return FamilyType.ARTIX7;
             case ARTIXUPLUS: return FamilyType.KINTEXUPLUS;
             case ASPARTAN7: return FamilyType.SPARTAN7;
+            case AVERSALAIEDGE: return FamilyType.VERSAL;
             case AZYNQ: return FamilyType.ZYNQ;
             case AZYNQUPLUS: return FamilyType.ZYNQUPLUS;
             case KINTEX7: return FamilyType.KINTEX7;
@@ -145,7 +146,9 @@ public class PartNameTools {
             case QKINTEXUPLUS: return FamilyType.KINTEXUPLUS;
             case QRKINTEXU: return FamilyType.KINTEXU;
             case QRVERSALAICORE: return FamilyType.VERSAL;
+            case QRVERSALAIEDGE: return FamilyType.VERSAL;
             case QVERSALAICORE: return FamilyType.VERSAL;
+            case QVERSALAIEDGE: return FamilyType.VERSAL;
             case QVERSALPREMIUM: return FamilyType.VERSAL;
             case QVERSALPRIME: return FamilyType.VERSAL;
             case QVIRTEX7: return FamilyType.VIRTEX7;
@@ -165,7 +168,6 @@ public class PartNameTools {
             case VIRTEXUPLUS: return FamilyType.VIRTEXUPLUS;
             case VIRTEXUPLUS58G: return FamilyType.VIRTEXUPLUS58G;
             case VIRTEXUPLUSHBM: return FamilyType.VIRTEXUPLUSHBM;
-            case VIRTEXUPLUSHBMES1: return FamilyType.VIRTEXUPLUSHBM;
             case ZYNQ: return FamilyType.ZYNQ;
             case ZYNQUPLUS: return FamilyType.ZYNQUPLUS;
             case ZYNQUPLUSRFSOC: return FamilyType.ZYNQUPLUSRFSOC;
@@ -186,6 +188,7 @@ public class PartNameTools {
             case ARTIX7L: return "Artix-7";
             case ARTIXUPLUS: return "Kintex UltraScale+";
             case ASPARTAN7: return "Spartan-7";
+            case AVERSALAIEDGE: return "Versal ACAP";
             case AZYNQ: return "Zynq-7000";
             case AZYNQUPLUS: return "Zynq UltraScale+";
             case KINTEX7: return "Kintex-7";
@@ -199,7 +202,9 @@ public class PartNameTools {
             case QKINTEXUPLUS: return "Kintex UltraScale+";
             case QRKINTEXU: return "Kintex UltraScale";
             case QRVERSALAICORE: return "Versal ACAP";
+            case QRVERSALAIEDGE: return "Versal ACAP";
             case QVERSALAICORE: return "Versal ACAP";
+            case QVERSALAIEDGE: return "Versal ACAP";
             case QVERSALPREMIUM: return "Versal ACAP";
             case QVERSALPRIME: return "Versal ACAP";
             case QVIRTEX7: return "Virtex-7";
@@ -220,7 +225,6 @@ public class PartNameTools {
             case VIRTEXUPLUS: return "Virtex UltraScale+";
             case VIRTEXUPLUS58G: return "Virtex UltraScale+";
             case VIRTEXUPLUSHBM: return "Virtex UltraScale+";
-            case VIRTEXUPLUSHBMES1: return "Virtex UltraScale+";
             case ZYNQ: return "Zynq-7000";
             case ZYNQUPLUS: return "Zynq UltraScale+";
             case ZYNQUPLUSRFSOC: return "Zynq UltraScale+ RFSOC";
@@ -241,6 +245,7 @@ public class PartNameTools {
             case ARTIX7L: return Series.Series7;
             case ARTIXUPLUS: return Series.UltraScalePlus;
             case ASPARTAN7: return Series.Series7;
+            case AVERSALAIEDGE: return Series.Versal;
             case AZYNQ: return Series.Series7;
             case AZYNQUPLUS: return Series.UltraScalePlus;
             case KINTEX7: return Series.Series7;
@@ -254,7 +259,9 @@ public class PartNameTools {
             case QKINTEXUPLUS: return Series.UltraScalePlus;
             case QRKINTEXU: return Series.UltraScale;
             case QRVERSALAICORE: return Series.Versal;
+            case QRVERSALAIEDGE: return Series.Versal;
             case QVERSALAICORE: return Series.Versal;
+            case QVERSALAIEDGE: return Series.Versal;
             case QVERSALPREMIUM: return Series.Versal;
             case QVERSALPRIME: return Series.Versal;
             case QVIRTEX7: return Series.Series7;
@@ -275,7 +282,6 @@ public class PartNameTools {
             case VIRTEXUPLUS: return Series.UltraScalePlus;
             case VIRTEXUPLUS58G: return Series.UltraScalePlus;
             case VIRTEXUPLUSHBM: return Series.UltraScalePlus;
-            case VIRTEXUPLUSHBMES1: return Series.UltraScalePlus;
             case ZYNQ: return Series.Series7;
             case ZYNQUPLUS: return Series.UltraScalePlus;
             case ZYNQUPLUSRFSOC: return Series.UltraScalePlus;

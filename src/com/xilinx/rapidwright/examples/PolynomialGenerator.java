@@ -1,7 +1,7 @@
 /*
  *
  * Copyright (c) 2018-2022, Xilinx, Inc.
- * Copyright (c) 2022-2023, Advanced Micro Devices, Inc.
+ * Copyright (c) 2022-2024, Advanced Micro Devices, Inc.
  * All rights reserved.
  *
  * Author: Chris Lavin, Xilinx Research Labs.
@@ -42,7 +42,6 @@ import com.xilinx.rapidwright.device.SiteTypeEnum;
 import com.xilinx.rapidwright.edif.EDIFCell;
 import com.xilinx.rapidwright.edif.EDIFCellInst;
 import com.xilinx.rapidwright.edif.EDIFDirection;
-import com.xilinx.rapidwright.edif.EDIFLibrary;
 import com.xilinx.rapidwright.edif.EDIFNet;
 import com.xilinx.rapidwright.edif.EDIFNetlist;
 import com.xilinx.rapidwright.edif.EDIFPort;
@@ -138,7 +137,7 @@ public class PolynomialGenerator {
 
 
         buildOperatorTree(left,d,inputA);
-        buildOperatorTree(right,d,inputB);
+        buildOperatorTree(right, d, inputB);
     }
 
     private static void ensureCellTypesSet(Module module) {
@@ -172,7 +171,7 @@ public class PolynomialGenerator {
         MultGenerator.createMult(multDesign2, origin, width, MULT_NAME, CLK_NAME);
         Module mult2 = new Module(multDesign2);
         ensureCellTypesSet(mult2);
-        mult2.setNetlist(multDesign.getNetlist());
+        mult2.setNetlist(multDesign2.getNetlist());
 
         operators.put("*o", mult2);
 
@@ -204,15 +203,6 @@ public class PolynomialGenerator {
         sub.setNetlist(subDesign2.getNetlist());
         operators.put("-o", sub2);
 
-        for (Design design : new Design[]{multDesign,multDesign2,adderDesign,adderDesign2,subDesign,subDesign2}) {
-            for (EDIFCell cell : design.getNetlist().getWorkLibrary().getCells()) {
-                d.getNetlist().getWorkLibrary().addCell(cell);
-            }
-            EDIFLibrary hdi = d.getNetlist().getHDIPrimitivesLibrary();
-            for (EDIFCell cell : design.getNetlist().getHDIPrimitivesLibrary().getCells()) {
-                if (!hdi.containsCell(cell)) hdi.addCell(cell);
-            }
-        }
         return operators;
     }
 
@@ -387,6 +377,10 @@ public class PolynomialGenerator {
         t.stop().start("Build Operator Tree");
 
         buildOperatorTree(p, d, results);
+
+        // This is redundant if the design will be routed later, but is necessary
+        // for correct visualization in the Hand Placer tool
+        RWRoute.preprocess(d);
 
         releaseOperators();
 

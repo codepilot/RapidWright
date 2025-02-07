@@ -30,7 +30,10 @@ import java.io.FileReader;
 import java.io.IOException;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collection;
+import java.util.Collections;
+import java.util.EnumSet;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedList;
@@ -51,9 +54,10 @@ import com.xilinx.rapidwright.device.BELPin;
 import com.xilinx.rapidwright.device.IntentCode;
 import com.xilinx.rapidwright.device.Node;
 import com.xilinx.rapidwright.device.PIP;
+import com.xilinx.rapidwright.device.Series;
+import com.xilinx.rapidwright.device.SiteTypeEnum;
 import com.xilinx.rapidwright.device.Tile;
 import com.xilinx.rapidwright.device.TileTypeEnum;
-import com.xilinx.rapidwright.device.Wire;
 import com.xilinx.rapidwright.edif.EDIFHierCellInst;
 import com.xilinx.rapidwright.timing.TimingEdge;
 import com.xilinx.rapidwright.timing.TimingManager;
@@ -65,6 +69,36 @@ import com.xilinx.rapidwright.util.Utils;
  * A collection of supportive methods for the router.
  */
 public class RouterHelper {
+    public static class NodeWithPrev extends Node {
+        protected NodeWithPrev prev;
+        public NodeWithPrev(Node node) {
+            super(node);
+        }
+
+        public NodeWithPrev(Node node, NodeWithPrev prev) {
+            super(node);
+            setPrev(prev);
+        }
+
+        public void setPrev(NodeWithPrev prev) {
+            this.prev = prev;
+        }
+
+        public NodeWithPrev getPrev() {
+            return prev;
+        }
+
+        public List<Node> getPrevPath() {
+            List<Node> path = new ArrayList<>();
+            NodeWithPrev curr = this;
+            while (curr != null) {
+                path.add(curr);
+                curr = curr.getPrev();
+            }
+            return path;
+        }
+    }
+
     /**
      * Checks if a {@link Net} instance has source and sink {@link SitePinInst} instances to be routable.
      * @param net The net to be checked.
@@ -128,28 +162,26 @@ public class RouterHelper {
      * @return A node that connects to an INT tile from an output pin.
      */
     public static Node projectOutputPinToINTNode(SitePinInst output) {
-        int watchdog = 5;
+        Node source = output.getConnectedNode();
+        int watchdog = 20;
 
-        // Starting from the SPI's connected node, for each node in queue
-        // return the first downhill node that is in an Interconnect tile.
-        // Otherwise, restart the queue with all such downhill nodes and repeat.
-        // No backtracking.
+        // Only block clocking tiles if source is not in a clock tile
+        final boolean blockClocking = !Utils.isClocking(source.getTile().getTileTypeEnum());
+
+        // Starting from the SPI's connected node, perform a downhill breadth-first search
         Queue<Node> queue = new ArrayDeque<>();
-        queue.add(output.getConnectedNode());
+        queue.add(source);
         while (!queue.isEmpty() && watchdog >= 0) {
             Node node = queue.poll();
             watchdog--;
-            assert(!Utils.isInterConnect(node.getTile().getTileTypeEnum()));
-
-            List<Node> downhillNodes = node.getAllDownhillNodes();
-            if (downhillNodes.isEmpty()) {
-                continue;
-            }
-
-            queue.clear();
-            for (Node downhill : downhillNodes) {
-                if (Utils.isInterConnect(downhill.getTile().getTileTypeEnum())) {
+            for (Node downhill : node.getAllDownhillNodes()) {
+                TileTypeEnum downhillTileType = downhill.getTile().getTileTypeEnum();
+                if (Utils.isInterConnect(downhillTileType)) {
+                    // Return node that has at least one downhill in the INT tile
                     return node;
+                }
+                if (blockClocking && Utils.isClocking(downhillTileType)) {
+                    continue;
                 }
                 queue.add(downhill);
             }
@@ -161,46 +193,49 @@ public class RouterHelper {
     /**
      * Gets a list of {@link Node} instances that connect an input {@link SitePinInst} instance to an INT {@link Tile} instance.
      * @param input The input pin.
-     * @return A list of nodes from the input SitePinInst to an INT tile.
+     * @return A node that connects to an INT tile from an input pin.
      */
-    public static List<Node> projectInputPinToINTNode(SitePinInst input) {
-        List<Node> sinkToSwitchBoxPath = new ArrayList<>();
-        LightweightRouteNode sink = new LightweightRouteNode(input.getConnectedNode());
-        sink.setPrev(null);
-        Queue<LightweightRouteNode> q = new LinkedList<>();
-        q.add(sink);
-        int watchdog = 1000;
-        while (!q.isEmpty()) {
-            LightweightRouteNode n = q.poll();
-            if (n.getNode().getTile().getTileTypeEnum() == TileTypeEnum.INT) {
-                while (n != null) {
-                    sinkToSwitchBoxPath.add(n.getNode());
-                    n = n.getPrev();
-                }
-                return sinkToSwitchBoxPath;
-            }
-            for (Node uphill : n.getNode().getAllUphillNodes()) {
-                if (uphill.getAllUphillNodes().size() == 0) continue;
-                LightweightRouteNode prev = new LightweightRouteNode(uphill);
-                prev.setPrev(n);
-                q.add(prev);
-            }
+    public static Node projectInputPinToINTNode(SitePinInst input) {
+        Node sink = input.getConnectedNode();
+        TileTypeEnum sinkTileType = sink.getTile().getTileTypeEnum();
+        if (sinkTileType == TileTypeEnum.INT) {
+            return sink;
+        }
+        // Only block clocking tiles if source is not in a clock tile
+        final boolean blockClocking = !Utils.isClocking(sinkTileType);
+
+        int watchdog = 40;
+
+        // Starting from the SPI's connected node, perform an uphill breadth-first search
+        Queue<Node> queue = new ArrayDeque<>();
+        queue.add(sink);
+        while (!queue.isEmpty() && watchdog >= 0) {
+            Node node = queue.poll();
             watchdog--;
-            if (watchdog < 0) {
-                break;
+            for (Node uphill : node.getAllUphillNodes()) {
+                TileTypeEnum uphillTileType = uphill.getTile().getTileTypeEnum();
+                if (uphillTileType == TileTypeEnum.INT ||
+                        // Versal only: Terminate at non INT (e.g. CLE_BC_CORE) tile type for CTRL pin inputs
+                        EnumSet.of(IntentCode.NODE_CLE_CTRL, IntentCode.NODE_INTF_CTRL).contains(uphill.getIntentCode())) {
+                    return uphill;
+                }
+                if (uphillTileType != sinkTileType && Utils.isClocking(uphillTileType)) {
+                    continue;
+                }
+                queue.add(uphill);
             }
         }
 
-        return sinkToSwitchBoxPath;
+        return null;
     }
 
     public static Tile getUpstreamINTTileOfClkIn(SitePinInst clkIn) {
-        List<Node> pathToINTTile = projectInputPinToINTNode(clkIn);
-        if (pathToINTTile.isEmpty()) {
+        Node intNode = projectInputPinToINTNode(clkIn);
+        if (intNode == null) {
             throw new RuntimeException("ERROR: CLK_IN does not connect to INT Tile directly");
         }
 
-        return pathToINTTile.get(0).getTile();
+        return intNode.getTile();
     }
 
     /**
@@ -247,7 +282,7 @@ public class RouterHelper {
         for (int i = 0; i < connectionNodes.size() - 1; i++) {
             Node driver = connectionNodes.get(i + driverOffsetIdx);
             Node load = connectionNodes.get(i + loadOffsetIdx);
-            PIP pip = findPIPbetweenNodes(driver, load);
+            PIP pip = PIP.getArbitraryPIP(driver, load);
             if (pip != null) {
                 connectionPIPs.add(pip);
             } else {
@@ -255,67 +290,6 @@ public class RouterHelper {
             }
         }
         return connectionPIPs;
-    }
-
-    /**
-     * Finds the {@link PIP} instance that connects two {@link Node} instances.
-     * @param driver The driver node.
-     * @param load The load node.
-     * @return The PIP connecting the two nodes.
-     */
-    public static PIP findPIPbetweenNodes(Node driver, Node load) {
-        PIP pip = getPIP(load.getTile(), driver.getAllWiresInNode(), load.getWire());
-        if (pip == null) {
-            // for other scenarios regarding bidirectional nodes, such as LAG tile nodes, LAG_LAG_X12Y250/LAG_MUX_ATOM_0_TXOUT to node LAG_LAG_X12Y310/UBUMP0
-            pip = getPIP(driver, load);
-        }
-
-        return pip;
-    }
-
-    /**
-     * Gets the {@link PIP} instance based on the {@link Tile} instance of a node, its driver node wires and its base {@link Wire} instance.
-     * @param loadTile The base tile of the load node.
-     * @param driverWires All wires in the driver node.
-     * @param loadWire The wire of the load node.
-     * @return The PIP that connects one of the wires in the driver node and the wire of the load node.
-     */
-    public static PIP getPIP(Tile loadTile, Wire[] driverWires, int loadWire) {
-        PIP pip = null;
-        for (Wire wire : driverWires) {
-            if (wire.getTile().equals(loadTile)) {
-                pip = loadTile.getPIP(wire.getWireIndex(), loadWire);
-                if (pip != null) {
-                    if (pip.isBidirectional() && pip.getStartWireIndex() == loadWire) {
-                        pip.setIsReversed(true);
-                    }
-                    break;
-                }
-            }
-        }
-        return pip;
-    }
-
-    /**
-     * Gets the {@link PIP} instance from a driver {@link Node} instance to a load {@link Node} instance.
-     * @param driver The driver node.
-     * @param load The load node.
-     * @return The PIP from the driver node to the load node.
-     */
-    public static PIP getPIP(Node driver, Node load) {
-        for (PIP p : driver.getAllDownhillPIPs()) {
-            if (p.getEndNode().equals(load))
-                return p;
-        }
-        for (PIP p : driver.getAllUphillPIPs()) {
-            if (p.getStartNode().equals(load)) {
-                if (p.isBidirectional()) {
-                    p.setIsReversed(true);
-                }
-                return p;
-            }
-        }
-        return null;
     }
 
     /**
@@ -356,19 +330,6 @@ public class RouterHelper {
     }
 
     /**
-     * Checks if a DSP {@link BELPin} instance is invertible.
-     * @param belPin The bel pin in question.
-     * @return true, if the bel pin is invertible.
-     */
-    private static boolean isInvertibleDSPBELPin(BELPin belPin) {
-        if (belPin.getBELName().equals("CLKINV")) {
-            //NEED TO BE INVERTED when BEL.canInvert returns false
-            return true;
-        }
-        return belPin.getBEL().canInvert();
-    }
-
-    /**
      * Inverts all possible GND sink pins to VCC pins.
      * @param design The target design.
      * @param pins The GND net pins.
@@ -386,21 +347,32 @@ public class RouterHelper {
     public static Set<SitePinInst> invertPossibleGndPinsToVccPins(Design design,
                                                                   List<SitePinInst> pins,
                                                                   boolean invertLutInputs) {
-        Net gndNet = design.getGndNet();
+        final boolean isVersal = (design.getSeries() == Series.Versal);
+        final Net gndNet = design.getGndNet();
+        final Net vccNet = design.getVccNet();
         Set<SitePinInst> toInvertPins = new HashSet<>();
         nextSitePin: for (SitePinInst spi : pins) {
             if (!spi.getNet().equals(gndNet))
                 throw new RuntimeException(spi.toString());
+            if (spi.isOutPin()) {
+                continue;
+            }
             SiteInst si = spi.getSiteInst();
             String siteWireName = spi.getSiteWireName();
             if (invertLutInputs && spi.isLUTInputPin()) {
                 Collection<Cell> connectedCells = DesignTools.getConnectedCells(spi);
                 if (connectedCells.isEmpty()) {
-                    for (BELPin belPin : si.getSiteWirePins(siteWireName)) {
+                    for (BELPin belPin : si.getSiteWirePins(spi.getSiteWireName())) {
                         if (belPin.isSitePort()) {
                             continue;
                         }
                         BEL bel = belPin.getBEL();
+                        if (isVersal && bel.isIMR()) {
+                            // Since DesignTools.getConnectedCells() will only return cells
+                            // for which a logical pin mapping exists, for the purpose of
+                            // identifying SRL16s walk through this IMR
+                            bel = si.getBEL(bel.getName().substring(0,1) + "6LUT");
+                        }
                         Cell cell = si.getCell(bel);
                         if (cell == null) {
                             continue;
@@ -436,6 +408,9 @@ public class RouterHelper {
                 }
 
                 toInvertPins.add(spi);
+                // Re-paint the intra-site routing from GND to VCC
+                // (no intra site routing will occur during Net.addPin() later)
+                si.routeIntraSiteNet(vccNet, spi.getBELPin(), spi.getBELPin());
 
                 for (Cell cell : connectedCells) {
                     // Find the logical pin name
@@ -456,7 +431,12 @@ public class RouterHelper {
             } else {
                 BELPin[] belPins = si.getSiteWirePins(siteWireName);
                 if (belPins.length != 2) {
-                    continue;
+                    if (belPins.length == 3 && si.getSiteTypeEnum() == SiteTypeEnum.DSP58 && siteWireName.equals("RSTD")) {
+                        assert(isVersal);
+                        assert(belPins[1].toString().equals("SRCMXINV.RSTAD_UNUSED"));
+                    } else {
+                        continue;
+                    }
                 }
                 for (BELPin belPin : belPins) {
                     if (belPin.isSitePort()) {
@@ -465,12 +445,15 @@ public class RouterHelper {
                     if (!belPin.getBEL().canInvert()) {
                         continue;
                     }
-                    if (spi.getSite().getName().startsWith("RAM")) {
-                        if (belPin.getBELName().startsWith("CLK")) {
-                            continue;
-                        }
+                    // Emulate Vivado's behaviour and do not invert CLK* site pins
+                    if (Utils.isBRAM(spi.getSiteInst()) &&
+                            belPin.getBELName().startsWith("CLK") &&
+                            !isVersal) {
+                        continue;
                     }
                     toInvertPins.add(spi);
+                    // Unpaint the sitewire ahead of pin being added below
+                    si.unrouteIntraSiteNet(spi.getBELPin(), spi.getBELPin());
                 }
             }
         }
@@ -482,10 +465,10 @@ public class RouterHelper {
         // as we are simply moving the SPI from one net to another
         gndNet.getPins().removeAll(toInvertPins);
 
-        Net vccNet = design.getVccNet();
-        for (SitePinInst toinvert:toInvertPins) {
+        for (SitePinInst toinvert : toInvertPins) {
             assert(toinvert.getSiteInst() != null);
-            if (!vccNet.addPin(toinvert)) {
+            boolean updateSiteRouting = false;
+            if (!vccNet.addPin(toinvert, updateSiteRouting)) {
                   throw new RuntimeException("ERROR: Couldn't invert site pin " +
                           toinvert);
             }
@@ -520,58 +503,39 @@ public class RouterHelper {
      * @param estimator An instantiation of DelayEstimatorBase.
      * @return The map containing net delay for each sink pin paired with an INT tile node of a routed net.
      */
-    public static Map<Pair<SitePinInst, Node>, Short> getSourceToSinkINTNodeDelays(Net net, DelayEstimatorBase estimator) {
+    public static Map<SitePinInst, Pair<Node,Short>> getSourceToSinkINTNodeDelays(Net net, DelayEstimatorBase estimator) {
         List<PIP> pips = net.getPIPs();
-        Map<Node, LightweightRouteNode> nodeRoutingNodeMap = new HashMap<>();
-        boolean firstPIP = true;
+        Map<Node, Integer> delayMap = new HashMap<>();
         for (PIP pip : pips) {
             Node startNode = pip.getStartNode();
-            LightweightRouteNode startrn = createRoutingNode(pip.getStartNode(), nodeRoutingNodeMap);
-
-            if (firstPIP) {
-                startrn.setDelayFromSource(0);
-            }
-            firstPIP = false;
+            int upstreamDelay = delayMap.getOrDefault(startNode, 0);
 
             Node endNode = pip.getEndNode();
-            LightweightRouteNode endrn = createRoutingNode(endNode, nodeRoutingNodeMap);
-            endrn.setPrev(startrn);
             int delay = 0;
             if (endNode.getTile().getTileTypeEnum() == TileTypeEnum.INT) {//device independent?
                 delay = computeNodeDelay(estimator, endNode)
                         + DelayEstimatorBase.getExtraDelay(endNode, DelayEstimatorBase.isLong(startNode));
             }
-
-            endrn.setDelayFromSource(startrn.getDelayFromSource() + delay);
+            delayMap.put(endNode, upstreamDelay + delay);
         }
 
-        Map<Pair<SitePinInst, Node>, Short> sinkNodeDelays = new HashMap<>();
+        Map<SitePinInst, Pair<Node,Short>> sinkNodeDelays = new HashMap<>();
         for (SitePinInst sink : net.getSinkPins()) {
             Node sinkNode = sink.getConnectedNode();
-            if (!(sinkNode.getTile().getTileTypeEnum() == TileTypeEnum.INT)) {
-                sinkNode = projectInputPinToINTNode(sink).get(0);
+            if (sinkNode.getTile().getTileTypeEnum() != TileTypeEnum.INT) {
+                Node sinkINTNode = projectInputPinToINTNode(sink);
+                if (sinkINTNode != null) {
+                    sinkNode = sinkINTNode;
+                } else {
+                    // Must be a direct connection (e.g. COUT -> CIN)
+                }
             }
 
-            short routeDelay = (short) nodeRoutingNodeMap.get(sinkNode).getDelayFromSource();
-            sinkNodeDelays.put(new Pair<>(sink, sinkNode), routeDelay);
+            short routeDelay = (short) delayMap.get(sinkNode).intValue();
+            sinkNodeDelays.put(sink, new Pair<>(sinkNode,routeDelay));
         }
 
         return sinkNodeDelays;
-    }
-
-    /**
-     * Creates a {@link LightweightRouteNode} Object based on a {@link Node} Object, avoiding duplicates.
-     * @param node The {@link Node} instance that is used to create a RoutingNode object.
-     * @param createdRoutingNodes A map storing created {@link LightweightRouteNode} instances and corresponding {@link Node} instances.
-     * @return A created RoutingNode instance based on a node
-     */
-    public static LightweightRouteNode createRoutingNode(Node node, Map<Node, LightweightRouteNode> createdRoutingNodes) {
-        LightweightRouteNode resourceNode = createdRoutingNodes.get(node);
-        if (resourceNode == null) {
-            resourceNode = new LightweightRouteNode(node);
-            createdRoutingNodes.put(node, resourceNode);
-        }
-        return resourceNode;
     }
 
     /**
@@ -594,44 +558,43 @@ public class RouterHelper {
      */
     public static boolean routeDirectConnection(Connection directConnection) {
         directConnection.setNodes(findPathBetweenNodes(directConnection.getSource().getConnectedNode(), directConnection.getSink().getConnectedNode()));
-        return directConnection.getNodes() != null;
+        return !directConnection.getNodes().isEmpty();
     }
 
     /**
      * Find a path from a source node to a sink node.
+     * Intermediate nodes with tile type returning true for {@link Utils#isClocking(TileTypeEnum)} will be ignored.
      * @param source The source node.
      * @param sink The sink node.
      * @return A list of nodes making up the path.
      */
     public static List<Node> findPathBetweenNodes(Node source, Node sink) {
-        List<Node> path = new ArrayList<>();
         if (source.equals(sink)) {
-            return path; // for pins without additional projected int_node
+            return Collections.emptyList(); // for pins without additional projected int_node
         }
         if (source.getAllDownhillNodes().contains(sink)) {
-            path.add(sink);
-            path.add(source);
-            return path;
+            return Arrays.asList(sink, source);
         }
-        LightweightRouteNode sourcer = new LightweightRouteNode(source);
+        NodeWithPrev sourcer = new NodeWithPrev(source);
         sourcer.setPrev(null);
-        Queue<LightweightRouteNode> queue = new LinkedList<>();
+        Queue<NodeWithPrev> queue = new LinkedList<>();
         queue.add(sourcer);
 
+        // Only block clocking tiles if both source and sink are not in a clock tile
+        final boolean blockClocking = !Utils.isClocking(source.getTile().getTileTypeEnum()) &&
+                !Utils.isClocking(sink.getTile().getTileTypeEnum());
+
         int watchdog = 10000;
-        boolean success = false;
         while (!queue.isEmpty()) {
-            LightweightRouteNode curr = queue.poll();
-            if (curr.getNode().equals(sink)) {
-                while (curr != null) {
-                    path.add(curr.getNode());
-                    curr = curr.getPrev();
-                }
-                success = true;
-                break;
+            NodeWithPrev curr = queue.poll();
+            if (curr.equals(sink)) {
+                return curr.getPrevPath();
             }
-            for (Node n : curr.getNode().getAllDownhillNodes()) {
-                LightweightRouteNode child = new LightweightRouteNode(n);
+            for (Node n : curr.getAllDownhillNodes()) {
+                if (blockClocking && Utils.isClocking(n.getTile().getTileTypeEnum())) {
+                    continue;
+                }
+                NodeWithPrev child = new NodeWithPrev(n);
                 child.setPrev(curr);
                 queue.add(child);
             }
@@ -641,11 +604,8 @@ public class RouterHelper {
             }
         }
 
-        if (!success) {
-            System.err.println("ERROR: Failed to find a path between two nodes: " + source + ", " + sink);
-            return null;
-        }
-        return path;
+        System.err.println("ERROR: Failed to find a path between two nodes: " + source + ", " + sink);
+        return Collections.emptyList();
     }
 
     /**
@@ -699,5 +659,4 @@ public class RouterHelper {
         reader.close();
         return path;
     }
-
 }
